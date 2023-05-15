@@ -21,7 +21,7 @@ def main(argv: Sequence[str]):
     exp_momd = momd.solve()
     exp_rnn = rnn.solve()
 
-    utils.plot_explotability(exp_fp, exp_omd, exp_momd, exp_rnn, cfg['plot_title'])
+    utils.plot_explotability(exp_fp, exp_omd, exp_momd, exp_rnn, cfg['plot_title'], cfg['results_dir'])
 
 if __name__ == "__main__":
    app.run(main)
