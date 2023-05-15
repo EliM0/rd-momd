@@ -1,0 +1,39 @@
+iterations: 200
+game_name: 'mfg_crowd_modelling_2d'
+plot_title: 'Linear Quadratic Environment'
+
+munchausen_omd:
+    batch_size: 128                           # Number of transitions to sample at each learning step.
+    learn_every: 64                           # Number of steps between learning updates.
+    num_episodes_per_iteration: 1000          # Number of training eepisodes for each iteration.
+    num_iterations: 100                       # Number of iterations.
+    epsilon_decay_duration: 100000            # Number of game steps over which epsilon is decayed.
+    epsilon_power: 1                          # Power for the epsilon decay.
+    epsilon_start: 0.1                        # Starting exploration parameter.
+    epsilon_end: 0.1                          # "Final exploration parameter.
+    discount_factor: 1.0                      # Discount factor for future rewards.
+    reset_replay_buffer_on_update: False      # Reset the replay buffer when the softmax policy is updated.
+    seed: 42                                  # Training seed.
+    eval_every: 200                           # Episode frequency at which the agents are evaluated.
+    hidden_layers_sizes: ["128", "128"]       # Number of hidden units in the avg-net and Q-net.
+    update_target_network_every: 200          # Number of steps between DQN target network updates.
+    replay_buffer_capacity: 40000             # Size of the replay buffer.
+    min_buffer_size_to_learn: 1000            # Number of samples in buffer before learning begins.
+    optimizer: "adam"                         # ["adam", "sgd"] Optimizer
+    learning_rate: 0.01                       # Learning rate for inner rl agent.
+    loss: "mse"                               # ["mse", "huber"] Loss function.
+    huber_loss_parameter: 1.0                 # Parameter for Huber loss.
+    gradient_clipping: null                   # Value to clip the gradient to.
+    tau: 10                                   # Temperature parameter in Munchausen target.
+    alpha: 0.99                               # Alpha parameter in Munchausen target.
+    with_munchausen: True                     # If true, target uses Munchausen penalty terms.
+    use_checkpoints: False                    # Save/load neural network weights.
+    checkpoint_dir: "/tmp/dqn_test"           # Directory to save/load the agent.
+    logdir: null                              # Logging dir to use for TF summary files. If None, the metrics will only be logged to stderr.
+    log_distribution: False                   # Enables logging of the distribution. - 
+
+fictitious_play:
+    learning_rate: null                       # Learning rate. If not, it will be set to 1/iteration.
+
+online_mirror_descent:
+    learning_rate: 0.01                       # Learning rate.

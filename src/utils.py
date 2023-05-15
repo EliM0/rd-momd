@@ -16,11 +16,8 @@ def plot_explotability(fp, omd, momd, rnnmomd, title):
     plt.semilogy(fp)
     plt.semilogy(omd)
     plt.semilogy(momd)
-    # plt.semilogy(rnnmomd)
+    plt.semilogy(rnnmomd)
 
     plt.grid(True)
-    # plt.legend(["Fictitious Play"])
-    # plt.legend(["Fictitious Play", "Online Mirror Descent"])
-    plt.legend(["Fictitious Play", "Online Mirror Descent", "Munchausen OMD"])
-    # plt.legend(["Fictitious Play", "Online Mirror Descent", "Munchausen OMD", "RNN + MOMD"])
+    plt.legend(["Fictitious Play", "Online Mirror Descent", "Munchausen OMD", "RNN + MOMD"])
     plt.show()

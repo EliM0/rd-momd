@@ -1,6 +1,7 @@
-iterations: 5
-omd-alpha: 1
-tau: 1
+iterations: 100
+game_name: 'mfg_crowd_modelling_2d'
+plot_title: 'Crowd Motion Environment'
+results_dir: './results'
 
 munchausen_omd:
     batch_size: 128                           # Number of transitions to sample at each learning step.
