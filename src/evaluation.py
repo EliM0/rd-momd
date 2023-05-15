@@ -13,9 +13,9 @@ def main(argv: Sequence[str]):
     game_settings = cfg['game_settings']
 
     afp = AverageFictitiousPlay(game_name, game_settings, cfg)
-    # omd = OnlineMirrorDescent(game_name, cfg)
-    momd = MunchausenDeepMirrorDescent(game_name, cfg)
-    rnn = RNNMunchausenDeepMirrorDescent(game_name, cfg)
+    # omd = OnlineMirrorDescent(game_name, game_settings, cfg)
+    momd = MunchausenDeepMirrorDescent(game_name, game_settings, cfg)
+    rnn = RNNMunchausenDeepMirrorDescent(game_name, game_settings, cfg)
 
     exp_afp = afp.solve()
     # exp_omd = omd.solve()
