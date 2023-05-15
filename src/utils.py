@@ -7,20 +7,22 @@ def read_config(config_file):
         cfg = yaml.load(file, Loader=yaml.FullLoader)
         return cfg
     
-def plot_explotability(fp, omd, momd, rnnmomd, title, results_dir):
+def plot_explotability(afp, omd, momd, rnnmomd, title, results_dir):
     plt.figure()
     plt.title(title)
 
     plt.xlabel("Iterations")
     plt.ylabel("Exploitability")
     
-    plt.semilogy(fp)
-    plt.semilogy(omd)
+    plt.semilogy(afp)
+    # plt.semilogy(omd)
     plt.semilogy(momd)
     plt.semilogy(rnnmomd)
 
     plt.grid(True)
-    plt.legend(["Fictitious Play", "Online Mirror Descent", "Munchausen OMD", "RNN + MOMD"])
+    # plt.legend(["D-AFP", "OMD", "D-MOMD", "RNN + MOMD"])
+    # plt.legend(["D-AFP", "D-MOMD"])
+    plt.legend(["D-AFP", "D-MOMD", "RNN + MOMD"])
     plt.savefig(results_dir + '/' + timestamp() +  '.png')
 
 def timestamp():

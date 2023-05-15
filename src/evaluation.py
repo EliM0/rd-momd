@@ -1,5 +1,5 @@
 import utils
-from baselines import FictitiousPlay, OnlineMirrorDescent, MunchausenDeepMirrorDescent, RNNMunchausenDeepMirrorDescent
+from baselines import OnlineMirrorDescent, MunchausenDeepMirrorDescent, RNNMunchausenDeepMirrorDescent, AverageFictitiousPlay
 from absl import flags, app
 from typing import Sequence
 
@@ -10,18 +10,20 @@ def main(argv: Sequence[str]):
     cfg = utils.read_config(FLAGS.config)
 
     game_name = cfg['game_name']
+    game_settings = cfg['game_settings']
 
-    fp = FictitiousPlay(game_name, cfg)
-    omd = OnlineMirrorDescent(game_name, cfg)
+    afp = AverageFictitiousPlay(game_name, game_settings, cfg)
+    # omd = OnlineMirrorDescent(game_name, cfg)
     momd = MunchausenDeepMirrorDescent(game_name, cfg)
     rnn = RNNMunchausenDeepMirrorDescent(game_name, cfg)
 
-    exp_fp = fp.solve()
-    exp_omd = omd.solve()
+    exp_afp = afp.solve()
+    # exp_omd = omd.solve()
     exp_momd = momd.solve()
     exp_rnn = rnn.solve()
 
-    utils.plot_explotability(exp_fp, exp_omd, exp_momd, exp_rnn, cfg['plot_title'], cfg['results_dir'])
+    # utils.plot_explotability(exp_afp, exp_omd, exp_momd, exp_rnn, cfg['plot_title'], cfg['results_dir'])
+    utils.plot_explotability(exp_afp, None, exp_momd, exp_rnn, cfg['plot_title'], cfg['results_dir'])
 
 if __name__ == "__main__":
    app.run(main)

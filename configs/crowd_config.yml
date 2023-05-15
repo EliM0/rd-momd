@@ -1,5 +1,7 @@
-iterations: 100
+iterations: 10
 game_name: 'mfg_crowd_modelling_2d'
+game_settings: null
+
 plot_title: 'Crowd Motion Environment'
 results_dir: './results'
 
@@ -51,7 +53,7 @@ rnn_munchausen_omd:
     replay_buffer_capacity: 40000             # Size of the replay buffer.
     min_buffer_size_to_learn: 1000            # Number of samples in buffer before learning begins.
     optimizer: "adam"                         # ["adam", "sgd"] Optimizer
-    learning_rate: 0.01                        # Learning rate for inner rl agent.
+    learning_rate: 0.01                       # Learning rate for inner rl agent.
     loss: "mse"                               # ["mse", "huber"] Loss function.
     huber_loss_parameter: 1.0                 # Parameter for Huber loss.
     gradient_clipping: null                   # Value to clip the gradient to.
@@ -62,6 +64,38 @@ rnn_munchausen_omd:
     checkpoint_dir: "/tmp/dqn_test"           # Directory to save/load the agent.
     logdir: null                              # Logging dir to use for TF summary files. If None, the metrics will only be logged to stderr.
     log_distribution: False                   # Enables logging of the distribution. - 
+
+average_fp:
+    logdir: null                                       # Logging dir to use for TF summary files. If None, the metrics will only be logged to stderr.
+    log_distribution: False                            # Enables logging of the distribution.
+    eval_every: 200                                    # Episode frequency at which the agents are evaluated.
+    batch_size: 128                                    # Number of transitions to sample at each learning step.
+    learn_every: 40                                    # Number of steps between learning updates.
+    num_dqn_episodes_per_iteration: 3000               # Number of DQN training episodes for each iteration.
+    epsilon_decay_duration: 200000                     # Number of game steps over which epsilon is decayed. (int(20e6))
+    epsilon_start: 0.1                                 # Starting exploration parameter.
+    epsilon_end: 0.1                                   # Final exploration parameter.
+    discount_factor: 1.0                               # Discount factor for future rewards.
+    seed: 42                                           # Training seed.
+    hidden_layers_sizes: ['128', '128']                # Number of hidden units in the Q-net.
+    update_target_network_every: 200                   # Number of steps between DQN target network updates.s
+    replay_buffer_capacity: 5000                       # Size of the replay buffer.
+    min_buffer_size_to_learn: 200                      # Number of samples in buffer before learning begins.
+    optimizer: 'adam'                                  # ['sgd', 'adam'] Optimizer.
+    learning_rate: 0.001                               # Learning rate for inner rl agent.
+    loss: 'mse'                                        # ['mse', 'huber'] Loss function.
+    huber_loss_parameter: 1.0                          # Parameter for Huber loss.
+    gradient_clipping: 40                              # Value to clip the gradient to.
+    avg_pol_batch_size: 128                            # Number of transitions to sample at each learning step.
+    avg_pol_num_training_steps_per_iteration: 2000     # Number of steps for average policy at each FP iteration.
+    avg_pol_num_episodes_per_iteration: 100            # Number of samples to store at each FP iteration.
+    avg_pol_hidden_layers_sizes: ['128', '128']        # Number of hidden units in the avg-net and Q-net.
+    avg_pol_reservoir_buffer_capacity: 100000000       # Size of the reservoir buffer.
+    avg_pol_min_buffer_size_to_learn: 100              # Number of samples in buffer before learning begins.
+    avg_pol_optimizer: 'sgd'                           # ['sgd', 'adam'] Optimizer.
+    avg_pol_learning_rate: 0.01                        # Learning rate for inner rl agent.
+    avg_gradient_clipping: 100                         # Value to clip the gradient to.
+    avg_pol_tau: 10.0                                  # Temperature for softmax in policy.
 
 fictitious_play:
     learning_rate: null                       # Learning rate. If not, it will be set to 1/iteration.
