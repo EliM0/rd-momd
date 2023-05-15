@@ -1,0 +1,25 @@
+name: forl
+channels:
+  - pytorch
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.8.5
+  - pip=20.3
+  - cudatoolkit=11.7
+  - pytorch
+  - torchvision
+  - tensorflow>=2.12
+  - pip:
+      - mfglib
+      - grpcio
+      - protobuf
+      - click
+      - cycler
+      - kiwisolver
+      - jax[cpu]
+      - open_spiel
+      - rlax
+      - dm-haiku
+      - optax
+      - clu
