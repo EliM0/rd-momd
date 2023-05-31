@@ -63,7 +63,7 @@ class TrajectoryMunchausenDQN(rl_agent.AbstractAgent):
       state_representation_size,
       num_actions,
       # Training options.
-      batch_size: int = 128,
+      batch_size: int = 16,
       learn_every: int = 64,
       epsilon_start: float = 0.1,
       epsilon_end: float = 0.1,
@@ -84,7 +84,7 @@ class TrajectoryMunchausenDQN(rl_agent.AbstractAgent):
       huber_loss_parameter: float = 1.0,
       # Network options.
       update_target_network_every: int = 19200,
-      hidden_layers_sizes=128,
+      lstm_hidden_layer_size=32,
       qnn_params_init=None,
       # Munchausen options.
       tau=0.05,
@@ -142,15 +142,19 @@ class TrajectoryMunchausenDQN(rl_agent.AbstractAgent):
     self._trajectory_sample_overlap_length = trajectory_sample_overlap_length
     self._trajectory_save_timer = self._trajectory_sample_length
 
+    self._observation_history = jnp.zeros([trajectory_sample_length - 1, state_representation_size])
+
     # Create the Q-network.
     self._update_target_network_every = update_target_network_every
 
-    if isinstance(hidden_layers_sizes, int):
-      hidden_layers_sizes = [hidden_layers_sizes]
+    if not isinstance(lstm_hidden_layer_size, int):
+      raise ValueError("LSTM hidden layers sizes not an integer.")
 
     def network(x):
-      mlp = hk.nets.MLP(hidden_layers_sizes + [num_actions])
-      return mlp(x)
+      core = hk.LSTM(lstm_hidden_layer_size)
+      batch_size = x.shape[0]
+      outs, state = hk.dynamic_unroll(core, x, core.initial_state(batch_size), time_major=False)
+      return hk.BatchApply(hk.Linear(num_actions))(outs), state
 
     self.hk_network = hk.without_apply_rng(hk.transform(network))
     self.hk_network_apply = jax.jit(self.hk_network.apply)
@@ -161,7 +165,10 @@ class TrajectoryMunchausenDQN(rl_agent.AbstractAgent):
       self._params_prev_q_network = _copy_params(qnn_params_init)
     else:
       rng = jax.random.PRNGKey(seed)
-      x = jnp.ones([1, state_representation_size])
+      # Shape should be (sequence_length, batch_size, state_representation_size)
+      # but the last step of the trajectory is only used for information about
+      # the next state.
+      x = jnp.ones([batch_size, trajectory_sample_length - 1, state_representation_size])
       self._params_q_network = self.hk_network.init(rng, x)
       self._params_target_q_network = self.hk_network.init(rng, x)
       self._params_prev_q_network = self.hk_network.init(rng, x)
@@ -176,18 +183,17 @@ class TrajectoryMunchausenDQN(rl_agent.AbstractAgent):
       raise ValueError("Not implemented, choose from 'mse', 'huber'.")
 
     if optimizer == "adam":
-      optimizer = optax.adam(learning_rate)
+      optimizer = optax.adam(learning_rate) # type: ignore
     elif optimizer == "sgd":
-      optimizer = optax.sgd(learning_rate)
+      optimizer = optax.sgd(learning_rate) # type: ignore
     else:
       raise ValueError("Not implemented, choose from 'adam' and 'sgd'.")
 
     # Clipping the gradients prevent divergence and allow more stable training.
     if gradient_clipping:
-      optimizer = optax.chain(optimizer,
-                              optax.clip_by_global_norm(gradient_clipping))
+      optimizer = optax.chain(optimizer, optax.clip_by_global_norm(gradient_clipping)) # type: ignore
 
-    opt_init, opt_update = optimizer.init, optimizer.update
+    opt_init, opt_update = optimizer.init, optimizer.update # type: ignore
 
     def _stochastic_gradient_descent(params, opt_state, gradient):
       updates, opt_state = opt_update(gradient, opt_state)
@@ -226,13 +232,29 @@ class TrajectoryMunchausenDQN(rl_agent.AbstractAgent):
       # Act according to epsilon-greedy or soft-max for current Q-network.
       info_state = time_step.observations["info_state"][self.player_id]
       legal_actions = time_step.observations["legal_actions"][self.player_id]
+      jnp.append(self._observation_history, jnp.array([info_state]), axis=0)
       if use_softmax:
-        action, probs = self._softmax(info_state, legal_actions,
-                                      self._tau if tau is None else tau)
+        # action, probs = self._softmax(info_state, legal_actions,
+        #                               self._tau if tau is None else tau)
+        action, probs = self._softmax(
+          self._observation_history[-self._trajectory_sample_length - 1:],
+          legal_actions,
+          self._tau if tau is None else tau
+        )
       else:
+        # epsilon = self._get_epsilon(is_evaluation)
+        # action, probs = self._epsilon_greedy(info_state, legal_actions, epsilon)
         epsilon = self._get_epsilon(is_evaluation)
-        action, probs = self._epsilon_greedy(info_state, legal_actions, epsilon)
+        action, probs = self._epsilon_greedy(
+          self._observation_history[-self._trajectory_sample_length - 1:],
+          legal_actions,
+          epsilon
+        )
+      # Avoid O(n) cost of popping front every time.
+      if len(self._observation_history) > 3 * self._trajectory_sample_length:
+        self._observation_history = self._observation_history[-self._trajectory_sample_length - 1:]
     else:
+      legal_actions = None
       action = None
       probs = []
 
@@ -248,11 +270,6 @@ class TrajectoryMunchausenDQN(rl_agent.AbstractAgent):
 
       if self._prev_time_step and add_transition_record:
         # We may omit record adding here if it's done elsewhere.
-        # print("Adding transition to replay buffer")
-        # print(f"\tPrevious time step:    {self._prev_time_step}")
-        # print(f"\tPrevious action:       {self._prev_action}")
-        # print(f"\tPrevious legal action: {self._prev_legal_action}")
-        # print(f"\tNew time step:         {time_step}")
         self.extend_trajectory(self._prev_time_step, self._prev_action,
                                self._prev_legal_action, time_step)
 
@@ -316,12 +333,10 @@ class TrajectoryMunchausenDQN(rl_agent.AbstractAgent):
         and len(self._trajectory_sample) >= self._trajectory_sample_length):
       self._trajectory_replay_buffer.add(self._trajectory_sample[-self._trajectory_sample_length:])
       self._trajectory_save_timer = self._trajectory_sample_length - self._trajectory_sample_overlap_length
-    # elif time_step.last():
-    #   print(f"The trajectory is too short: {len(self._trajectory_sample)}")
 
   def _get_action_probs(self, params, info_states, legal_one_hots):
     """Returns the soft-max action probability distribution."""
-    q_values = self.hk_network.apply(params, info_states)
+    q_values = self.hk_network.apply(params, info_states)[0]
     legal_q_values = q_values + (1 - legal_one_hots) * ILLEGAL_ACTION_PENALTY
     return jax.nn.softmax(legal_q_values / self._tau)
 
@@ -331,8 +346,8 @@ class TrajectoryMunchausenDQN(rl_agent.AbstractAgent):
     """Returns the Munchausen loss."""
     # Target with 2 parts: reward and value for next state; each part is
     # modified according to the Munchausen trick.
-    q_values = self.hk_network.apply(params, info_states)
-    target_q_values = self.hk_network.apply(params_target, next_info_states)
+    q_values = self.hk_network.apply(params, info_states)[0]
+    target_q_values = self.hk_network.apply(params_target, next_info_states)[0]
 
     r_term = rewards
     if self._with_munchausen:
@@ -390,68 +405,52 @@ class TrajectoryMunchausenDQN(rl_agent.AbstractAgent):
     a_one_hot[a] = value
     return a_one_hot
 
-  # TODO(bjarni): Sample trajectory replay buffer.
   def learn(self):
-    """Compute the loss on sampled transitions and perform a Q-network update.
+    """Compute the loss on sampled trajectories and perform a Q-network update.
 
     If there are not enough elements in the buffer, no loss is computed and
     `None` is returned instead.
 
     Returns:
-      The average loss obtained on this batch of transitions or `None`.
+      The average loss obtained on this batch of trajectories or `None`.
     """
 
-    # print(f"Going to learn with {len(self._trajectory_replay_buffer) * self._trajectory_sample_length} "
-    #       f"transitions in {len(self._trajectory_replay_buffer)} trajectories.)")
-    # print(f"We require {self._batch_size} transitions to learn (batch size).")
-    # print(f"We require {self._min_trajectory_replay_buffer_size_to_learn} trajectories to learn.")
-
-    if (len(self._trajectory_replay_buffer) * self._trajectory_sample_length < self._batch_size or
+    if (len(self._trajectory_replay_buffer) < self._batch_size or
         len(self._trajectory_replay_buffer) < self._min_trajectory_replay_buffer_size_to_learn):
-      # print("Conditions not fulfilled.")
       return None
 
-    # print("Conditions fulfilled.")
+    trajectories = self._trajectory_replay_buffer.sample(self._batch_size)
 
-    transitions = []
-    # for _ in range(self._batch_size):
-    #   # Pick a random trajectory from the replay buffer and pick a random
-    #   # transition from that trajectory.
-    #   sampled_trajectory = self._trajectory_replay_buffer.sample(1)[0]
-    #   assert len(sampled_trajectory) == self._trajectory_sample_length
-    #   sampled_transition_index = np.random.randint(0, self._trajectory_sample_length - 2)
-    #   sampled_transition = Transition(
-    #     info_state=sampled_trajectory[sampled_transition_index].info_state,
-    #     action=sampled_trajectory[sampled_transition_index].action,
-    #     legal_one_hots=sampled_trajectory[sampled_transition_index].legal_one_hots,
-    #     reward=sampled_trajectory[sampled_transition_index].reward,
-    #     next_info_state=sampled_trajectory[sampled_transition_index + 1].info_state,
-    #     is_final_step=float(sampled_trajectory[sampled_transition_index + 1].is_final_step),
-    #     next_legal_one_hots=sampled_trajectory[sampled_transition_index + 1].legal_one_hots,
-    #   )
-    #   transitions.append(sampled_transition)
-    for trajetory in self._trajectory_replay_buffer:
-      for i in range(len(trajetory) - 1):
-        transitions.append(Transition(
-          info_state=trajetory[i].info_state,
-          action=trajetory[i].action,
-          legal_one_hots=trajetory[i].legal_one_hots,
-          reward=trajetory[i].reward,
-          next_info_state=trajetory[i + 1].info_state,
-          is_final_step=float(trajetory[i + 1].is_final_step),
-          next_legal_one_hots=trajetory[i + 1].legal_one_hots,
-        ))
-    transitions = random.sample(transitions, self._batch_size)
+    info_states = np.asarray([[t.info_state for t in trajectory[:-1]] for trajectory in trajectories])
+    actions = np.asarray([[self._to_one_hot(t.action) for t in trajectory[:-1]] for trajectory in trajectories])
+    legal_one_hots = np.asarray([[t.legal_one_hots for t in trajectory[:-1]] for trajectory in trajectories])
+    rewards = np.asarray([[t.reward for t in trajectory[:-1]] for trajectory in trajectories])
+    next_info_states = np.asarray([[t.info_state for t in trajectory[1:]] for trajectory in trajectories])
+    are_final_steps = np.asarray([[t.is_final_step for t in trajectory[1:]] for trajectory in trajectories])
+    next_legal_one_hots = np.asarray([[t.legal_one_hots for t in trajectory[1:]] for trajectory in trajectories])
 
-    # transitions = self._replay_buffer.sample(self._batch_size)
-    info_states = np.asarray([t.info_state for t in transitions])
-    actions = np.asarray([self._to_one_hot(t.action) for t in transitions])
-    legal_one_hots = np.asarray([t.legal_one_hots for t in transitions])
-    rewards = np.asarray([t.reward for t in transitions])
-    next_info_states = np.asarray([t.next_info_state for t in transitions])
-    are_final_steps = np.asarray([t.is_final_step for t in transitions])
-    next_legal_one_hots = np.asarray(
-        [t.next_legal_one_hots for t in transitions])
+    # transitions = []
+    # for trajetory in self._trajectory_replay_buffer:
+    #   for i in range(len(trajetory) - 1):
+    #     transitions.append(Transition(
+    #       info_state=trajetory[i].info_state,
+    #       action=trajetory[i].action,
+    #       legal_one_hots=trajetory[i].legal_one_hots,
+    #       reward=trajetory[i].reward,
+    #       next_info_state=trajetory[i + 1].info_state,
+    #       is_final_step=float(trajetory[i + 1].is_final_step),
+    #       next_legal_one_hots=trajetory[i + 1].legal_one_hots,
+    #     ))
+    # transitions = random.sample(transitions, self._batch_size)
+
+    # info_states = np.asarray([t.info_state for t in transitions])
+    # actions = np.asarray([self._to_one_hot(t.action) for t in transitions])
+    # legal_one_hots = np.asarray([t.legal_one_hots for t in transitions])
+    # rewards = np.asarray([t.reward for t in transitions])
+    # next_info_states = np.asarray([t.next_info_state for t in transitions])
+    # are_final_steps = np.asarray([t.is_final_step for t in transitions])
+    # next_legal_one_hots = np.asarray(
+    #     [t.next_legal_one_hots for t in transitions])
 
     self._params_q_network, self._opt_state, loss_val = self._jit_update(
         self._params_q_network, self._params_target_q_network,
@@ -477,8 +476,10 @@ class TrajectoryMunchausenDQN(rl_agent.AbstractAgent):
       probs = self._to_one_hot(legal_actions, value=1.0 / len(legal_actions))
       return action, probs
 
-    info_state = np.reshape(info_state, [1, -1])
+    info_state = np.reshape(info_state, [1, *info_state.shape])
     q_values = self.hk_network_apply(self._params_q_network, info_state)[0]
+    q_values = np.squeeze(q_values)
+    q_values = q_values[-1]
     legal_one_hot = self._to_one_hot(legal_actions)
     legal_q_values = q_values + (1 - legal_one_hot) * ILLEGAL_ACTION_PENALTY
     action = int(np.argmax(legal_q_values))
@@ -499,8 +500,10 @@ class TrajectoryMunchausenDQN(rl_agent.AbstractAgent):
   def _softmax(self, info_state, legal_actions,
                tau: float) -> Tuple[int, np.ndarray]:
     """Returns a valid soft-max action and action probabilities."""
-    info_state = np.reshape(info_state, [1, -1])
+    info_state = np.reshape(info_state, [1, *info_state.shape])
     q_values = self.hk_network_apply(self._params_q_network, info_state)[0]
+    q_values = np.squeeze(q_values)
+    q_values = q_values[-1]
     legal_one_hot = self._to_one_hot(legal_actions)
     legal_q_values = q_values + (1 - legal_one_hot) * ILLEGAL_ACTION_PENALTY
     # Apply temperature and subtract the maximum value for numerical stability.
@@ -516,7 +519,7 @@ class TrajectoryMunchausenDQN(rl_agent.AbstractAgent):
     if self._reset_replay_buffer_on_update:
       # Also reset the replay buffer to avoid having transitions from the
       # previous policy.
-      self._replay_buffer.reset()
+      self._trajectory_replay_buffer.reset()
 
   def reset(self, force_timer=True):
     if (force_timer and self._trajectory_save_timer > 0 and len(self._trajectory_sample) > self._trajectory_sample_length
@@ -596,7 +599,7 @@ class TrajectoryDeepOnlineMirrorDescent(object):
     This will evaluate the Q-network for current policy and distribution.
     """
     for ep in range(self._num_episodes_per_iteration):
-      for env, agent in zip(self._envs, self._agents):
+      for env, agent in zip(self._envs, self._agents): # type: ignore
         agent.reset()
         time_step = env.reset()
         while not time_step.last():
@@ -644,7 +647,7 @@ class TrajectoryDeepOnlineMirrorDescent(object):
     self._iteration += 1
     # Update the distributions of the environments and the previous Q-networks
     # of the agents.
-    for env, agent in zip(self._envs, self._agents):
+    for env, agent in zip(self._envs, self._agents): # type: ignore
       env.update_mfg_distribution(self.distribution)
       agent.update_prev_q_network()
 
