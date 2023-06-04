@@ -185,7 +185,8 @@ class POMunchausenDQN(rl_agent.AbstractAgent):
            is_evaluation=False,
            add_transition_record=True,
            use_softmax=False,
-           tau: Optional[float] = None):
+           tau: Optional[float] = None,
+           distribution=None):
     """Returns the action to be taken and updates the Q-network if needed.
 
     Args:
@@ -506,7 +507,7 @@ class PODeepOnlineMirrorDescent(object):
       for env, agent in zip(self._envs, self._agents):
         time_step = env.reset()
         while not time_step.last():
-          agent_output = agent.step(time_step, use_softmax=False)
+          agent_output = agent.step(time_step, use_softmax=False, distribution=self._distribution)
           action_list = [agent_output.action]
           time_step = env.step(action_list)
 

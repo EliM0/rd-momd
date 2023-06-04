@@ -3,7 +3,6 @@ game_name: 'mfg_crowd_modelling_2d'
 game_settings: null
 
 plot_title: 'Crowd Motion Environment'
-results_dir: './results'
 
 munchausen_omd:
     batch_size: 128                           # Number of transitions to sample at each learning step.
@@ -96,9 +95,3 @@ average_fp:
     avg_pol_learning_rate: 0.01                        # Learning rate for inner rl agent.
     avg_gradient_clipping: 100                         # Value to clip the gradient to.
     avg_pol_tau: 10.0                                  # Temperature for softmax in policy.
-
-fictitious_play:
-    learning_rate: null                       # Learning rate. If not, it will be set to 1/iteration.
-
-online_mirror_descent:
-    learning_rate: 0.1                        # Learning rate.
