@@ -213,7 +213,7 @@ class AverageFictitiousPlay:
 
 class POMunchausenDeepMirrorDescent:
     def __init__(self, game_name, game_setting, cfg):
-        self.writer = SummaryWriter('runs/D-MOMD')
+        self.writer = SummaryWriter('runs/PO-DMOMD')
 
         self.game = factory.create_game_with_setting(game_name, game_setting)
         num_players = self.game.num_players()
