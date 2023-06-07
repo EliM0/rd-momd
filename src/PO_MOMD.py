@@ -34,7 +34,7 @@ from open_spiel.python.utils.replay_buffer import ReplayBuffer
 Transition = collections.namedtuple(
     "Transition",
     "info_state action legal_one_hots reward next_info_state is_final_step "
-    "next_legal_one_hots")
+    "next_legal_one_hots distribution next_distribution")
 
 # Penalty for illegal actions in action selection. In epsilon-greedy, this will
 # prevent them from being selected and in soft-max the probabilities will be
@@ -185,8 +185,7 @@ class POMunchausenDQN(rl_agent.AbstractAgent):
            is_evaluation=False,
            add_transition_record=True,
            use_softmax=False,
-           tau: Optional[float] = None,
-           distribution=None):
+           tau: Optional[float] = None):
     """Returns the action to be taken and updates the Q-network if needed.
 
     Args:
@@ -272,7 +271,9 @@ class POMunchausenDQN(rl_agent.AbstractAgent):
         reward=time_step.rewards[self.player_id],
         next_info_state=time_step.observations["info_state"][self.player_id][:],
         is_final_step=float(time_step.last()),
-        next_legal_one_hots=next_legal_one_hots)
+        next_legal_one_hots=next_legal_one_hots,
+        distribution=prev_time_step.observations["distribution"][self.player_id][:],
+        next_distribution=time_step.observations["distribution"][self.player_id][:])
     self._replay_buffer.add(transition)
 
   def _get_action_probs(self, params, info_states, legal_one_hots):
@@ -507,7 +508,7 @@ class PODeepOnlineMirrorDescent(object):
       for env, agent in zip(self._envs, self._agents):
         time_step = env.reset()
         while not time_step.last():
-          agent_output = agent.step(time_step, use_softmax=False, distribution=self._distribution)
+          agent_output = agent.step(time_step, use_softmax=False)
           action_list = [agent_output.action]
           time_step = env.step(action_list)
 

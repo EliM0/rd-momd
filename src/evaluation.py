@@ -27,6 +27,9 @@ def main(argv: Sequence[str]):
         alg = POMunchausenDeepMirrorDescent(game_name, game_settings, cfg)
     elif FLAGS.algorithm == 'po-rnn-momd':
         raise NotImplementedError
+    else:
+        print("usage: evaluation.py --config=<config_dir> --algorithm=['afp', 'dmomd', 'rnn-momd', 'fo-dmomd', 'po-dmomd', 'po-rnn-momd']")
+        exit()
 
     alg.solve()
 
