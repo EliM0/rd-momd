@@ -49,7 +49,7 @@ def _copy_params(params):
   return jax.tree_map(lambda x: x.copy(), params)
 
 
-class POMunchausenDQN(rl_agent.AbstractAgent):
+class FOMunchausenDQN(rl_agent.AbstractAgent):
   """Munchausen DQN Agent implementation in JAX."""
 
   def __init__(
@@ -207,12 +207,16 @@ class POMunchausenDQN(rl_agent.AbstractAgent):
       # Act according to epsilon-greedy or soft-max for current Q-network.
       info_state = time_step.observations["info_state"][self.player_id]
       legal_actions = time_step.observations["legal_actions"][self.player_id]
+      distribution = time_step.observations["distribution"][self.player_id]
+
+      state = info_state + distribution
+
       if use_softmax:
-        action, probs = self._softmax(info_state, legal_actions,
+        action, probs = self._softmax(state, legal_actions,
                                       self._tau if tau is None else tau)
       else:
         epsilon = self._get_epsilon(is_evaluation)
-        action, probs = self._epsilon_greedy(info_state, legal_actions, epsilon)
+        action, probs = self._epsilon_greedy(state, legal_actions, epsilon)
     else:
       action = None
       probs = []
@@ -276,24 +280,28 @@ class POMunchausenDQN(rl_agent.AbstractAgent):
         next_distribution=time_step.observations["distribution"][self.player_id][:])
     self._replay_buffer.add(transition)
 
-  def _get_action_probs(self, params, info_states, legal_one_hots):
+  def _get_action_probs(self, params, states, legal_one_hots):
     """Returns the soft-max action probability distribution."""
-    q_values = self.hk_network.apply(params, info_states)
+    q_values = self.hk_network.apply(params, states)
     legal_q_values = q_values + (1 - legal_one_hots) * ILLEGAL_ACTION_PENALTY
     return jax.nn.softmax(legal_q_values / self._tau)
 
   def _loss(self, params, params_target, params_prev, info_states, actions,
             legal_one_hots, rewards, next_info_states, are_final_steps,
-            next_legal_one_hots):
+            next_legal_one_hots, distributions, next_distributions):
     """Returns the Munchausen loss."""
     # Target with 2 parts: reward and value for next state; each part is
     # modified according to the Munchausen trick.
-    q_values = self.hk_network.apply(params, info_states)
-    target_q_values = self.hk_network.apply(params_target, next_info_states)
+
+    states = jax.numpy.hstack((info_states, distributions))
+    next_states = jax.numpy.hstack((next_info_states, next_distributions))
+
+    q_values = self.hk_network.apply(params, states)
+    target_q_values = self.hk_network.apply(params_target, next_states)
 
     r_term = rewards
     if self._with_munchausen:
-      probs = self._get_action_probs(params_prev, info_states, legal_one_hots)
+      probs = self._get_action_probs(params_prev, states, legal_one_hots)
       prob_prev_action = jnp.sum(probs * actions, axis=-1)
       penalty_pi = jnp.log(jnp.clip(prob_prev_action, MIN_ACTION_PROB))
       r_term += self._alpha * self._tau * penalty_pi
@@ -301,7 +309,7 @@ class POMunchausenDQN(rl_agent.AbstractAgent):
     if self._with_munchausen:
       # Average value over actions + extra log term.
       # We clip the probabilities to avoid NaNs in the log term.
-      next_probs = self._get_action_probs(params_prev, next_info_states,
+      next_probs = self._get_action_probs(params_prev, next_states,
                                           next_legal_one_hots)
       q_term_values = next_probs * (
           target_q_values -
@@ -328,13 +336,15 @@ class POMunchausenDQN(rl_agent.AbstractAgent):
 
     def update(params, params_target, params_prev, opt_state, info_states,
                actions, legal_one_hots, rewards, next_info_states,
-               are_final_steps, next_legal_one_hots):
+               are_final_steps, next_legal_one_hots, distributions, next_distributions):
       loss_val, grad_val = self._loss_and_grad(params, params_target,
                                                params_prev, info_states,
                                                actions, legal_one_hots, rewards,
                                                next_info_states,
                                                are_final_steps,
-                                               next_legal_one_hots)
+                                               next_legal_one_hots,
+                                               distributions, 
+                                               next_distributions)
       new_params, new_opt_state = self._opt_update_fn(params, opt_state,
                                                       grad_val)
       return new_params, new_opt_state, loss_val
@@ -368,14 +378,15 @@ class POMunchausenDQN(rl_agent.AbstractAgent):
     rewards = np.asarray([t.reward for t in transitions])
     next_info_states = np.asarray([t.next_info_state for t in transitions])
     are_final_steps = np.asarray([t.is_final_step for t in transitions])
-    next_legal_one_hots = np.asarray(
-        [t.next_legal_one_hots for t in transitions])
+    next_legal_one_hots = np.asarray([t.next_legal_one_hots for t in transitions])
+    distributions = np.asarray([t.distribution for t in transitions])
+    next_distributions = np.asarray([t.next_distribution for t in transitions])
 
     self._params_q_network, self._opt_state, loss_val = self._jit_update(
         self._params_q_network, self._params_target_q_network,
         self._params_prev_q_network, self._opt_state, info_states, actions,
         legal_one_hots, rewards, next_info_states, are_final_steps,
-        next_legal_one_hots)
+        next_legal_one_hots, distributions, next_distributions)
 
     return loss_val
 
@@ -441,10 +452,10 @@ class POMunchausenDQN(rl_agent.AbstractAgent):
     return self._last_loss_value
 
 
-class SoftMaxPOMunchausenDQN(rl_agent.AbstractAgent):
+class SoftMaxFOMunchausenDQN(rl_agent.AbstractAgent):
   """Wraps a Munchausen DQN agent to use soft-max action selection."""
 
-  def __init__(self, agent: POMunchausenDQN, tau: Optional[float] = None):
+  def __init__(self, agent: FOMunchausenDQN, tau: Optional[float] = None):
     self._agent = agent
     self._tau = tau
 
@@ -453,7 +464,7 @@ class SoftMaxPOMunchausenDQN(rl_agent.AbstractAgent):
         time_step, is_evaluation=is_evaluation, use_softmax=True, tau=self._tau)
 
 
-class PODeepOnlineMirrorDescent(object):
+class FODeepOnlineMirrorDescent(object):
   """The deep online mirror descent algorithm."""
 
   def __init__(self,
@@ -479,7 +490,7 @@ class PODeepOnlineMirrorDescent(object):
     assert len(envs) == len(agents)
     # Make sure that the agents are all POMunchausenDQN.
     for agent in agents:
-      assert isinstance(agent, POMunchausenDQN)
+      assert isinstance(agent, FOMunchausenDQN)
 
     self._game = game
 
@@ -541,7 +552,7 @@ class PODeepOnlineMirrorDescent(object):
     """
     return rl_agent_policy.JointRLAgentPolicy(
         self._game, {
-            idx: SoftMaxPOMunchausenDQN(agent, tau=tau)
+            idx: SoftMaxFOMunchausenDQN(agent, tau=tau)
             for idx, agent in enumerate(self._agents)
         }, self._use_observation)
 

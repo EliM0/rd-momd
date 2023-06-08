@@ -1,5 +1,4 @@
-import RNN_munchausen_deep_mirror_descent
-import PO_MOMD
+from algorithms import fo_dmomd, rnn_momd
 from open_spiel.python.mfg.algorithms import munchausen_deep_mirror_descent, average_network_fictitious_play
 from open_spiel.python.mfg.algorithms import nash_conv, distribution
 from open_spiel.python.mfg.games import factory
@@ -114,11 +113,11 @@ class RNNMunchausenDeepMirrorDescent:
             "update_target_network_every": cfg['rnn_munchausen_omd']['update_target_network_every'],
             "with_munchausen": cfg['rnn_munchausen_omd']['with_munchausen']
         }
-        agents = [RNN_munchausen_deep_mirror_descent.RNNMunchausenDQN(p, info_state_size, num_actions, **kwargs)
+        agents = [rnn_momd.RNNMunchausenDQN(p, info_state_size, num_actions, **kwargs)
                 for p in range(num_players)]
 
         num_episodes_per_iteration = cfg['rnn_munchausen_omd']['num_episodes_per_iteration']
-        self.md = RNN_munchausen_deep_mirror_descent.RNNDeepOnlineMirrorDescent(self.game, envs, agents, eval_every=cfg['rnn_munchausen_omd']['eval_every'],
+        self.md = rnn_momd.RNNDeepOnlineMirrorDescent(self.game, envs, agents, eval_every=cfg['rnn_munchausen_omd']['eval_every'],
                                                                         num_episodes_per_iteration=num_episodes_per_iteration)
 
     def solve(self):
@@ -211,9 +210,9 @@ class AverageFictitiousPlay:
 
         return expls
 
-class POMunchausenDeepMirrorDescent:
+class FOMunchausenDeepMirrorDescent:
     def __init__(self, game_name, game_setting, cfg):
-        self.writer = SummaryWriter('runs/PO-DMOMD')
+        self.writer = SummaryWriter('runs/FO-DMOMD')
 
         self.game = factory.create_game_with_setting(game_name, game_setting)
         num_players = self.game.num_players()
@@ -229,6 +228,7 @@ class POMunchausenDeepMirrorDescent:
         env = envs[0]
         info_state_size = env.observation_spec()["info_state"][0]
         num_actions = env.action_spec()["num_actions"]
+        distribution_size = env.observation_spec()["distribution"][0]
 
         kwargs = {
             "alpha": cfg['munchausen_omd']['alpha'],
@@ -253,11 +253,11 @@ class POMunchausenDeepMirrorDescent:
             "update_target_network_every": cfg['munchausen_omd']['update_target_network_every'],
             "with_munchausen": cfg['munchausen_omd']['with_munchausen']
         }
-        agents = [PO_MOMD.POMunchausenDQN(p, info_state_size, num_actions, **kwargs)
+        agents = [fo_dmomd.FOMunchausenDQN(p, info_state_size + distribution_size, num_actions, **kwargs)
                 for p in range(num_players)]
 
         num_episodes_per_iteration = cfg['munchausen_omd']['num_episodes_per_iteration']
-        self.md = PO_MOMD.PODeepOnlineMirrorDescent(self.game, envs, agents, eval_every=cfg['munchausen_omd']['eval_every'],
+        self.md = fo_dmomd.FODeepOnlineMirrorDescent(self.game, envs, agents, eval_every=cfg['munchausen_omd']['eval_every'],
                                                                         num_episodes_per_iteration=num_episodes_per_iteration)
 
     def solve(self):
