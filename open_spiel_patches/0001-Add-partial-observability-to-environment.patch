@@ -1,0 +1,124 @@
+From 9660eccffffb69eaf2f169e3c4833174a52e4842 Mon Sep 17 00:00:00 2001
+From: Elisa <elisamecp@gmail.com>
+Date: Thu, 8 Jun 2023 22:36:56 +0200
+Subject: [PATCH] Add partial observability to environment
+
+---
+ open_spiel/python/rl_agent_policy.py | 13 ++++++++++++-
+ open_spiel/python/rl_environment.py  | 23 ++++++++++++++++++++---
+ 2 files changed, 32 insertions(+), 4 deletions(-)
+
+diff --git a/open_spiel/python/rl_agent_policy.py b/open_spiel/python/rl_agent_policy.py
+index e521bc4d..e7032be7 100644
+--- a/open_spiel/python/rl_agent_policy.py
++++ b/open_spiel/python/rl_agent_policy.py
+@@ -19,6 +19,7 @@ from open_spiel.python import policy
+ from open_spiel.python import rl_agent
+ from open_spiel.python import rl_environment
+ 
++import numpy as np
+ 
+ class JointRLAgentPolicy(policy.Policy):
+   """Joint policy denoted by the RL agents of a game.
+@@ -73,7 +74,9 @@ class JointRLAgentPolicy(policy.Policy):
+     self._obs["legal_actions"][player_id] = legal_actions
+ 
+     if self.game.get_type().short_name == 'mfg_crowd_modelling_2d':
+-        self._obs["distribution"][player_id] =  state.distribution_tensor(player_id)
++        distribution = state.distribution_tensor(player_id)
++        dist = self.get_partial_distribution(self._obs["info_state"][player_id], distribution) if self._agents[player_id]._agent.partial_obs else distribution
++        self._obs["distribution"][player_id] = dist
+ 
+     info_state = rl_environment.TimeStep(
+         observations=self._obs, rewards=None, discounts=None, step_type=None)
+@@ -82,6 +85,14 @@ class JointRLAgentPolicy(policy.Policy):
+     prob_dict = {action: p[action] for action in legal_actions}
+     return prob_dict
+ 
++  def get_partial_distribution(self, info_state, distribution):
++    size = int(np.sqrt(self.game.distribution_tensor_size()))
++
++    x = info_state[:size].index(1)
++    y = info_state[size:2*size].index(1)
++
++    return [distribution[i*size + j] if i >= 0 and i < size and j >= 0 and j < size else 0 
++            for i in range(x-1, x+2) for j in range(y-1, y+2)]
+ 
+ class RLAgentPolicy(JointRLAgentPolicy):
+   """A policy for a specific agent trained in an RL environment."""
+diff --git a/open_spiel/python/rl_environment.py b/open_spiel/python/rl_environment.py
+index 29602c25..83aac9f4 100644
+--- a/open_spiel/python/rl_environment.py
++++ b/open_spiel/python/rl_environment.py
+@@ -149,6 +149,7 @@ class Environment(object):
+                mfg_distribution=None,
+                mfg_population=None,
+                enable_legality_check=False,
++               partial_obs=False,
+                **kwargs):
+     """Constructor.
+ 
+@@ -172,6 +173,7 @@ class Environment(object):
+     self._mfg_distribution = mfg_distribution
+     self._mfg_population = mfg_population
+     self._enable_legality_check = enable_legality_check
++    self.partial_obs = partial_obs
+ 
+     if isinstance(game, str):
+       if kwargs:
+@@ -249,7 +251,9 @@ class Environment(object):
+           else self._state.information_state_tensor(player_id))
+       
+       if self.game.get_type().short_name == 'mfg_crowd_modelling_2d':
+-        observations["distribution"].append(self._state.distribution_tensor(player_id))
++        distribution = self._state.distribution_tensor(player_id)
++        dist = self.get_partial_distribution(observations["info_state"][-1], distribution) if self.partial_obs else distribution
++        observations["distribution"].append(dist)
+ 
+       observations["legal_actions"].append(self._state.legal_actions(player_id))
+     observations["current_player"] = self._state.current_player()
+@@ -362,7 +366,9 @@ class Environment(object):
+           else self._state.information_state_tensor(player_id))
+       
+       if self.game.get_type().short_name == 'mfg_crowd_modelling_2d':
+-        observations["distribution"].append(self._state.distribution_tensor(player_id))
++        distribution = self._state.distribution_tensor(player_id)
++        dist = self.get_partial_distribution(observations["info_state"][-1], distribution) if self.partial_obs else distribution
++        observations["distribution"].append(dist)
+         
+       observations["legal_actions"].append(self._state.legal_actions(player_id))
+     observations["current_player"] = self._state.current_player()
+@@ -402,6 +408,8 @@ class Environment(object):
+     Returns:
+       A specification dict describing the observation fields and shapes.
+     """
++    dist_size = 9 if self.partial_obs else self._game.distribution_tensor_size()
++    
+     return dict(
+         info_state=tuple([
+             self._game.observation_tensor_size() if self._use_observation else
+@@ -410,7 +418,7 @@ class Environment(object):
+         legal_actions=(self._game.num_distinct_actions(),),
+         current_player=(),
+         serialized_state=(),
+-        distribution=tuple([self._game.distribution_tensor_size()])
++        distribution=tuple([dist_size])
+     )
+ 
+   def action_spec(self):
+@@ -490,3 +498,12 @@ class Environment(object):
+     assert (
+         self._game.get_type().dynamics == pyspiel.GameType.Dynamics.MEAN_FIELD)
+     self._mfg_distribution = mfg_distribution
++
++  def get_partial_distribution(self, info_state, distribution):
++    size = int(np.sqrt(self.game.distribution_tensor_size()))
++
++    x = info_state[:size].index(1)
++    y = info_state[size:2*size].index(1)
++
++    return [distribution[i*size + j] if i >= 0 and i < size and j >= 0 and j < size else 0 
++            for i in range(x-1, x+2) for j in range(y-1, y+2)]
+-- 
+2.25.1
+
