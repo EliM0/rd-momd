@@ -34,7 +34,7 @@ Transition = collections.namedtuple(
 ILLEGAL_ACTION_LOGITS_PENALTY = -1e9
 
 
-class DQN(rl_agent.AbstractAgent):
+class ObsDQN(rl_agent.AbstractAgent):
   """DQN Agent implementation in JAX."""
 
   def __init__(self,
@@ -57,7 +57,8 @@ class DQN(rl_agent.AbstractAgent):
                loss_str="mse",
                huber_loss_parameter=1.0,
                seed=42,
-               gradient_clipping=None):
+               gradient_clipping=None,
+               partial_obs=False):
     """Initialize the DQN agent."""
 
     # This call to locals() is used to store every argument used to initialize
@@ -80,6 +81,8 @@ class DQN(rl_agent.AbstractAgent):
     self._epsilon_end = epsilon_end
     self._epsilon_decay_duration = epsilon_decay_duration
 
+    self.partial_obs = partial_obs
+
     # TODO(author6) Allow for optional replay buffer config.
     if not isinstance(replay_buffer_capacity, int):
       raise ValueError("Replay buffer capacity not an integer.")
@@ -96,7 +99,6 @@ class DQN(rl_agent.AbstractAgent):
     # Create the Q-network instances
 
     def network(x):
-      # print("in rl, x shape is: ", x.shape)
       mlp = hk.nets.MLP(self._layer_sizes + [num_actions])
       return mlp(x)
 

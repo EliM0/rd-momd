@@ -1,5 +1,5 @@
 import utils
-from baselines import MunchausenDeepMirrorDescent, RNNMunchausenDeepMirrorDescent, AverageFictitiousPlay, POMunchausenDeepMirrorDescent, FOMunchausenDeepMirrorDescent
+from baselines import *
 from absl import flags, app
 from typing import Sequence
 
@@ -21,8 +21,14 @@ def main(argv: Sequence[str]):
         alg = MunchausenDeepMirrorDescent(game_name, game_settings, cfg)
     elif FLAGS.algorithm == 'rnn-momd':
         alg = RNNMunchausenDeepMirrorDescent(game_name, game_settings, cfg)
+
+    elif FLAGS.algorithm == 'fo-afp':
+        alg = FOAverageFictitiousPlay(game_name, game_settings, cfg)
     elif FLAGS.algorithm == 'fo-dmomd':
         alg = FOMunchausenDeepMirrorDescent(game_name, game_settings, cfg)
+
+    elif FLAGS.algorithm == 'po-afp':
+        alg = POAverageFictitiousPlay(game_name, game_settings, cfg)
     elif FLAGS.algorithm == 'po-dmomd':
         alg = POMunchausenDeepMirrorDescent(game_name, game_settings, cfg)
     elif FLAGS.algorithm == 'po-rnn-momd':

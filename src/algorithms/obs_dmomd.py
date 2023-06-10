@@ -31,6 +31,8 @@ from open_spiel.python import rl_agent_policy
 from open_spiel.python.mfg.algorithms import distribution as distribution_std
 from open_spiel.python.utils.replay_buffer import ReplayBuffer
 
+from rl import rl_obs_agent_policy
+
 Transition = collections.namedtuple(
     "Transition",
     "info_state action legal_one_hots reward next_info_state is_final_step "
@@ -49,7 +51,7 @@ def _copy_params(params):
   return jax.tree_map(lambda x: x.copy(), params)
 
 
-class POMunchausenDQN(rl_agent.AbstractAgent):
+class ObsMunchausenDQN(rl_agent.AbstractAgent):
   """Munchausen DQN Agent implementation in JAX."""
 
   def __init__(
@@ -99,10 +101,10 @@ class POMunchausenDQN(rl_agent.AbstractAgent):
     self._discount_factor = discount_factor
     self._reset_replay_buffer_on_update = reset_replay_buffer_on_update
 
-    self.partial_obs = partial_obs
-
     self._tau = tau
     self._alpha = alpha
+
+    self.partial_obs = partial_obs
 
     # If true, the target uses Munchausen penalty terms.
     self._with_munchausen = with_munchausen
@@ -456,10 +458,10 @@ class POMunchausenDQN(rl_agent.AbstractAgent):
     return self._last_loss_value
 
 
-class SoftMaxPOMunchausenDQN(rl_agent.AbstractAgent):
+class SoftMaxObsMunchausenDQN(rl_agent.AbstractAgent):
   """Wraps a Munchausen DQN agent to use soft-max action selection."""
 
-  def __init__(self, agent: POMunchausenDQN, tau: Optional[float] = None):
+  def __init__(self, agent: ObsMunchausenDQN, tau: Optional[float] = None):
     self._agent = agent
     self._tau = tau
 
@@ -468,7 +470,7 @@ class SoftMaxPOMunchausenDQN(rl_agent.AbstractAgent):
         time_step, is_evaluation=is_evaluation, use_softmax=True, tau=self._tau)
 
 
-class PODeepOnlineMirrorDescent(object):
+class ObsDeepOnlineMirrorDescent(object):
   """The deep online mirror descent algorithm."""
 
   def __init__(self,
@@ -494,7 +496,7 @@ class PODeepOnlineMirrorDescent(object):
     assert len(envs) == len(agents)
     # Make sure that the agents are all POMunchausenDQN.
     for agent in agents:
-      assert isinstance(agent, POMunchausenDQN)
+      assert isinstance(agent, ObsMunchausenDQN)
 
     self._game = game
 
@@ -544,7 +546,7 @@ class PODeepOnlineMirrorDescent(object):
 
   def get_softmax_policy(self,
                          tau: Optional[float] = None
-                        ) -> rl_agent_policy.JointRLAgentPolicy:
+                        ) -> rl_obs_agent_policy.ObsJointRLAgentPolicy:
     """Returns the softmax policy with the specified tau.
 
     Args:
@@ -554,9 +556,9 @@ class PODeepOnlineMirrorDescent(object):
     Returns:
       A JointRLAgentPolicy.
     """
-    return rl_agent_policy.JointRLAgentPolicy(
+    return rl_obs_agent_policy.ObsJointRLAgentPolicy(
         self._game, {
-            idx: SoftMaxPOMunchausenDQN(agent, tau=tau)
+            idx: SoftMaxObsMunchausenDQN(agent, tau=tau)
             for idx, agent in enumerate(self._agents)
         }, self._use_observation)
 

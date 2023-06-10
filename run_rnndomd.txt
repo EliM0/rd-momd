@@ -1,9 +1,0 @@
-RNN_munchausen_deep_mirror_descent.py 
-location: in the same folder as all other mfg algorithms
-
-RNN_mfg_munchausen_domd_jax.py
-location: in the saem folder as all other mfg examples
-
-Run: 
-locate to the mfg/examples folder
-commandline: python3 RNN_mfg_munchausen_domd_jax.py

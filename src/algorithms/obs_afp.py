@@ -41,6 +41,8 @@ import pyspiel
 from open_spiel.python.utils import reservoir_buffer
 from open_spiel.python.utils import training
 
+from rl import rl_obs_agent_policy
+
 
 @dataclasses.dataclass
 class Transition:
@@ -51,12 +53,12 @@ class Transition:
   distribution: np.ndarray
 
 
-class FOAveragePolicy(rl_agent.AbstractAgent):
+class ObsAveragePolicy(rl_agent.AbstractAgent):
   """NFSP-like agent that learns an average policy using a single network."""
 
   def __init__(self,
                player_id: int,
-               br_rl_agent: rl_agent.AbstractAgent,
+               _agent: rl_agent.AbstractAgent,
                state_representation_size: int,
                num_actions: int,
                hidden_layers_sizes: List[int],
@@ -70,7 +72,7 @@ class FOAveragePolicy(rl_agent.AbstractAgent):
                seed: int = 42,
                tau: float = 1.0):
     """Initialize the AveragePolicy agent."""
-    self._br_rl_agent = br_rl_agent
+    self._agent = _agent
     self._player_id = player_id
     self._num_actions = num_actions
     self._batch_size = batch_size
@@ -84,7 +86,6 @@ class FOAveragePolicy(rl_agent.AbstractAgent):
 
     # Average policy network.
     def network(x):
-      print("x shape: ", x.shape)
       mlp = hk.nets.MLP(hidden_layers_sizes + [num_actions])
       return mlp(x)
 
@@ -98,6 +99,7 @@ class FOAveragePolicy(rl_agent.AbstractAgent):
 
     rng = jax.random.PRNGKey(seed)
     x = jnp.ones([1, state_representation_size])
+
     # Use the specified parameters if any, or initialize the network with random
     # weights.
     if params_avg_network is None:
@@ -197,7 +199,7 @@ class FOAveragePolicy(rl_agent.AbstractAgent):
 
     # Use the best response agent and add the transition in the reservoir
     # buffer.
-    br_agent_output = self._br_rl_agent.step(time_step, is_evaluation=True)
+    br_agent_output = self._agent.step(time_step, is_evaluation=True)
     self._add_transition(time_step, br_agent_output)
     return br_agent_output
 
@@ -249,8 +251,7 @@ class FOAveragePolicy(rl_agent.AbstractAgent):
     self._last_loss_value = float(loss_val_avg)
     return loss_val_avg
 
-
-class FOAverageNetworkFictitiousPlay(object):
+class ObsAverageNetworkFictitiousPlay(object):
   """Deep Average-network Fictitious Play.
 
   See the file description for more information.
@@ -299,10 +300,10 @@ class FOAverageNetworkFictitiousPlay(object):
     state_size = info_state_size + distribution_size
 
     self._avg_rl_agents = [
-        FOAveragePolicy(p, br_rl_agents[p], state_size, num_actions,
+        ObsAveragePolicy(p, br_rl_agents[p], state_size, num_actions,
                       **kwargs) for p in range(self._num_players)
     ]
-    self._policy = rl_agent_policy.JointRLAgentPolicy(
+    self._policy = rl_obs_agent_policy.ObsJointRLAgentPolicy(
         self._game,
         {idx: agent for idx, agent in enumerate(self._avg_rl_agents)},
         use_observation=env.use_observation)
@@ -316,7 +317,7 @@ class FOAverageNetworkFictitiousPlay(object):
       env.update_mfg_distribution(self._distribution)
 
   @property
-  def policy(self) -> rl_agent_policy.JointRLAgentPolicy:
+  def policy(self) -> rl_obs_agent_policy.ObsJointRLAgentPolicy:
     return self._policy
 
   def iteration(self):
