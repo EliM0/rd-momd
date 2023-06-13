@@ -15,22 +15,22 @@ def main(argv: Sequence[str]):
 
     alg = None
 
-    if FLAGS.algorithm == 'afp':
+    if FLAGS.algorithm == 'dafp':
         alg = AverageFictitiousPlay(game_name, game_settings, cfg)
     elif FLAGS.algorithm == 'dmomd':
         alg = MunchausenDeepMirrorDescent(game_name, game_settings, cfg)
     elif FLAGS.algorithm == 'rnn-momd':
         alg = RNNMunchausenDeepMirrorDescent(game_name, game_settings, cfg)
 
-    elif FLAGS.algorithm == 'fo-afp':
-        alg = FOAverageFictitiousPlay(game_name, game_settings, cfg)
+    elif FLAGS.algorithm == 'fo-dafp':
+        alg = ObsAverageFictitiousPlay(game_name, game_settings, cfg)
     elif FLAGS.algorithm == 'fo-dmomd':
-        alg = FOMunchausenDeepMirrorDescent(game_name, game_settings, cfg)
+        alg = ObsMunchausenDeepMirrorDescent(game_name, game_settings, cfg)
 
-    elif FLAGS.algorithm == 'po-afp':
-        alg = POAverageFictitiousPlay(game_name, game_settings, cfg)
+    elif FLAGS.algorithm == 'po-dafp':
+        alg = ObsAverageFictitiousPlay(game_name, game_settings, cfg, observability=True)
     elif FLAGS.algorithm == 'po-dmomd':
-        alg = POMunchausenDeepMirrorDescent(game_name, game_settings, cfg)
+        alg = ObsMunchausenDeepMirrorDescent(game_name, game_settings, cfg, observability=True)
     elif FLAGS.algorithm == 'po-rnn-momd':
         raise NotImplementedError
     else:
