@@ -16,6 +16,7 @@
 """Munchausen DQN Agent and deep online mirror descent implementation."""
 
 import collections
+import random
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from absl import logging
@@ -27,16 +28,25 @@ import optax
 import rlax
 
 from open_spiel.python import rl_agent
-from open_spiel.python import rl_agent_policy
 from open_spiel.python.mfg.algorithms import distribution as distribution_std
 from open_spiel.python.utils.replay_buffer import ReplayBuffer
 
-from open_spiel.python.mfg.algorithms.rl import rl_obs_agent_policy
+from rl import rl_obs_agent_policy
 
+# Trajectory change 1:
 Transition = collections.namedtuple(
     "Transition",
     "info_state action legal_one_hots reward next_info_state is_final_step "
     "next_legal_one_hots distribution next_distribution")
+
+TrajectoryStep = collections.namedtuple(
+    "TrajectoryStep",
+    "info_state action legal_one_hots reward is_final_step distribution")
+
+# Transition = collections.namedtuple(
+#     "Transition",
+#     "info_state action legal_one_hots reward next_info_state is_final_step "
+#     "next_legal_one_hots")
 
 # Penalty for illegal actions in action selection. In epsilon-greedy, this will
 # prevent them from being selected and in soft-max the probabilities will be
@@ -51,7 +61,7 @@ def _copy_params(params):
   return jax.tree_map(lambda x: x.copy(), params)
 
 
-class RNNMunchausenDQN(rl_agent.AbstractAgent):
+class ObsTRNNMunchausenDQN(rl_agent.AbstractAgent):
   """Munchausen DQN Agent implementation in JAX."""
 
   def __init__(
@@ -67,10 +77,20 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
       epsilon_decay_duration: int = int(20e6),
       epsilon_power: float = 1.0,
       discount_factor: float = 1.0,
+      # Trajectory replay buffer options.
+      trajectory_replay_buffer_capacity: int = 2000,
+      min_trajectory_replay_buffer_size_to_learn: int = 25,
+      trajectory_replay_buffer_class=ReplayBuffer,
+      # Trajectory options.
+      trajectory_sample_length: int = 80,
+      trajectory_sample_overlap_length: int = 40,
+      burn_in_length: int = 20,
+
       # Replay buffer options.
-      replay_buffer_capacity: int = int(2e5),
-      min_buffer_size_to_learn: int = 1000,
-      replay_buffer_class=ReplayBuffer,
+      # replay_buffer_capacity: int = int(2e5),
+      # min_buffer_size_to_learn: int = 1000,
+      # replay_buffer_class=ReplayBuffer,
+
       # Loss and optimizer options.
       optimizer: str = "sgd",
       learning_rate: float = 0.01,
@@ -103,8 +123,8 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
 
     self._tau = tau
     self._alpha = alpha
-    self.partial_obs = partial_obs
 
+    self.partial_obs = partial_obs
     # If true, the target uses Munchausen penalty terms.
     self._with_munchausen = with_munchausen
 
@@ -121,11 +141,28 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
     # Keep track of the last training loss achieved in an update step.
     self._last_loss_value = None
 
+    # Create the trajectory replay buffer.
+    if not isinstance(trajectory_replay_buffer_capacity, int):
+      raise ValueError("Trajectory replay buffer capacity not an integer.")
+    self._trajectory_replay_buffer = trajectory_replay_buffer_class(trajectory_replay_buffer_capacity)
+    self._min_trajectory_replay_buffer_size_to_learn = min_trajectory_replay_buffer_size_to_learn
+
+    self._trajectory_sample = []
+    if not isinstance(trajectory_sample_length, int):
+      raise ValueError("Trajectory sample lenght not an integer.")
+    if not isinstance(trajectory_sample_overlap_length, int):
+      raise ValueError("Trajectory sample lenght not an integer.")
+    if trajectory_sample_overlap_length >= trajectory_sample_length:
+      raise ValueError("Trajectory sample overlap length must be smaller than trajectory sample length.")
+    self._trajectory_sample_length = trajectory_sample_length
+    self._trajectory_sample_overlap_length = trajectory_sample_overlap_length
+    self._trajectory_save_timer = self._trajectory_sample_length
+    self._burn_in_length = burn_in_length
     # Create the replay buffer.
-    if not isinstance(replay_buffer_capacity, int):
-      raise ValueError("Replay buffer capacity not an integer.")
-    self._replay_buffer = replay_buffer_class(replay_buffer_capacity)
-    self._min_buffer_size_to_learn = min_buffer_size_to_learn
+    # if not isinstance(replay_buffer_capacity, int):
+    #   raise ValueError("Replay buffer capacity not an integer.")
+    # self._replay_buffer = replay_buffer_class(replay_buffer_capacity)
+    # self._min_buffer_size_to_learn = min_buffer_size_to_learn
 
     # Create the Q-network.
     self._update_target_network_every = update_target_network_every
@@ -136,39 +173,39 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
     # Change 1: modify the network to LSTM deep rnn network (try one layer first)
     # new modification: consider deep rnn model, the new time sequence length 
     def network(x):
+
+      # # batch as sequence length
+      # core = hk.LSTM(hidden_layers_sizes[0])
+      # # print("x shape: ", x.shape)
+      # x = x.reshape((1, x.shape[0], x.shape[1]))
+      # batch_size = x.shape[1]
+      # outs, state = hk.dynamic_unroll(core, x, core.initial_state(batch_size))
+
+
+      # batch of sequences
+      # initialize a random core
       core = hk.LSTM(hidden_layers_sizes[0])
-      print("x shape: ", x.shape)
-      x = x.reshape((1, x.shape[0], x.shape[1]))
-      batch_size = x.shape[1]
-      # print("x new shape ", x.shape)
-      # batch size: 128
-      # x shape: (1, 67) -> should have (sequence length, batch size, state space) -> (120, 128, 67)
-      # print(batch_size)
-      # x and core initial batch size should be of the same shape
-      outs, state = hk.dynamic_unroll(core, x, core.initial_state(batch_size))
+      # print("x shape: ", x.shape)
+      # # input size: (batch_size, time_sequence, state_space)
+      ## burn in 
+      ## feed in the burn in observations (the first several steps of x)
+      ## get a new initial state
+      if len(x.shape) == 2:
+        x = x.reshape((1, x.shape[0], x.shape[1]))
+        batch_size = x.shape[0]
+        outs, state = hk.dynamic_unroll(core, x, core.initial_state(batch_size),time_major=False)
+      #   print("here")
+      else:
+        # batch_size = x.shape[0]
+        burn_in_x = x[:,:self._burn_in_length,:]
+        # print("burn in x shape: ", burn_in_x.shape)
+        batch_size = burn_in_x.shape[0]
+        # x and core initial batch size should be of the same shape
+        _, core_state = hk.dynamic_unroll(core, x, core.initial_state(batch_size),time_major=False)
+        # use the new core and the rest of the sequence to train
+        outs, state = hk.dynamic_unroll(core, x[:,self._burn_in_length:,:], core_state,time_major=False)
+      ## use the new core and the rest of the sequence to train
       return hk.BatchApply(hk.Linear(num_actions))(outs), state
-
-
-    # def network(x):
-    #   """Defines the network architecture."""
-    #   model = hk.DeepRNN([
-    #     # lambda x: jax.nn.one_hot(x, num_classes=dataset.NUM_CHARS),
-    #     hk.LSTM(hidden_layers_sizes[0]),
-    #     jax.nn.relu,
-    #     hk.LSTM(hidden_layers_sizes[0]),
-    #     hk.nets.MLP(hidden_layers_sizes + [num_actions]),
-    #   ])
-    #   outs, state = hk.dynamic_unroll(model, x, model.initial_state(batch_size))
-    #   return model(outs), state
-
-    # print("hidden_layers_sizes: ", hidden_layers_sizes)
-    # print("num actions: ", num_actions)
-    # print("output sizes: ", hidden_layers_sizes + [num_actions])
-
-    # def network(x):
-    #   mlp = hk.nets.MLP(hidden_layers_sizes + [num_actions])
-    #   # print("x", x)
-    #   return mlp(x)
 
     # turns functions that use object-oriented impure modules into pure fucntions
     self.hk_network = hk.without_apply_rng(hk.transform(network))
@@ -183,7 +220,12 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
       rng = jax.random.PRNGKey(seed)
       # Change here: 
       # new modification: consider the time sequence length 
-      x = jnp.ones([1, state_representation_size])
+
+      # batch as sequence
+      # x = jnp.ones([1, state_representation_size])
+
+      # batch of sequences
+      x = jnp.ones([1, 1, state_representation_size])
       # print("x: ", x.shape)
       # init -> initialize the variables
       self._params_q_network = self.hk_network.init(rng, x)
@@ -251,9 +293,9 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
       info_state = time_step.observations["info_state"][self.player_id]
       legal_actions = time_step.observations["legal_actions"][self.player_id]
       distribution = time_step.observations["distribution"][self.player_id]
-      state = info_state + distribution
       # info_state is a list of size 67
       # print("info state step: ", len(info_state))
+      state = info_state + distribution
       if use_softmax:
         action, probs = self._softmax(state, legal_actions,
                                       self._tau if tau is None else tau)
@@ -278,9 +320,11 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
       if self._prev_time_step and add_transition_record:
         # We may omit record adding here if it's done elsewhere.
 
-        # Change ver.3: change for trajectory 
-        self.add_transition(self._prev_time_step, self._prev_action,
-                            self._prev_legal_action, time_step)
+        # Trajectory change 3: change for trajectory 
+        self.extend_trajectory(self._prev_time_step, self._prev_action,
+                               self._prev_legal_action, time_step)
+        # self.add_transition(self._prev_time_step, self._prev_action,
+        #                     self._prev_legal_action, time_step)
 
       if time_step.last():  # prepare for the next episode.
         self._prev_time_step = None
@@ -293,10 +337,9 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
 
     return rl_agent.StepOutput(action=action, probs=probs)
 
-# Change ver.3: modify buffer, adding trajectory 
-
-  def add_transition(self, prev_time_step, prev_action, prev_legal_actions,
-                     time_step):
+# Trajectory change 4: modify buffer, adding trajectory 
+  def extend_trajectory(self, prev_time_step, prev_action, prev_legal_actions,
+                        time_step):
     """Adds the new transition using `time_step` to the replay buffer.
 
     Adds the transition from `self._prev_time_step` to `time_step` by
@@ -309,24 +352,46 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
       time_step: current ts, an instance of rl_environment.TimeStep.
     """
     assert prev_time_step is not None
-    next_legal_actions = (
-        time_step.observations["legal_actions"][self.player_id])
-    next_legal_one_hots = self._to_one_hot(next_legal_actions)
     # Added for deep OMD: keep previous action mask.
     prev_legal_one_hots = self._to_one_hot(prev_legal_actions)
 
-    transition = Transition(
+    trajectory_step = TrajectoryStep(
         info_state=(
             prev_time_step.observations["info_state"][self.player_id][:]),
         action=prev_action,
         legal_one_hots=prev_legal_one_hots,
         reward=time_step.rewards[self.player_id],
-        next_info_state=time_step.observations["info_state"][self.player_id][:],
-        is_final_step=float(time_step.last()),
-        next_legal_one_hots=next_legal_one_hots,
-        distribution=prev_time_step.observations["distribution"][self.player_id][:],
-        next_distribution=time_step.observations["distribution"][self.player_id][:])
-    self._replay_buffer.add(transition)
+        is_final_step=False,
+        distribution=prev_time_step.observations["distribution"][self.player_id][:])
+    self._trajectory_sample.append(trajectory_step)
+    self._trajectory_save_timer -= 1
+
+    if time_step.last():
+      trajectory_step = TrajectoryStep(
+          info_state=(
+              time_step.observations["info_state"][self.player_id][:]),
+          action=None,
+          legal_one_hots=self._to_one_hot(
+              time_step.observations["legal_actions"][self.player_id]),
+          reward=0,
+          is_final_step=True,
+          distribution=time_step.observations["distribution"][self.player_id][:])
+      self._trajectory_sample.append(trajectory_step)
+      self._trajectory_save_timer -= 1
+
+    # Avoid O(n) cost of popping front every time.
+    if len(self._trajectory_sample) > 3 * self._trajectory_sample_length:
+      self._trajectory_sample = self._trajectory_sample[-self._trajectory_sample_length:]
+
+    # Save trajectory if it's time or the episode is over (only if the
+    # trajectory is long enough).
+    if ((self._trajectory_save_timer <= 0 or time_step.last())
+        and len(self._trajectory_sample) >= self._trajectory_sample_length):
+      self._trajectory_replay_buffer.add(self._trajectory_sample[-self._trajectory_sample_length:])
+      self._trajectory_save_timer = self._trajectory_sample_length - self._trajectory_sample_overlap_length
+    # elif time_step.last():
+    #   print(f"The trajectory is too short: {len(self._trajectory_sample)}")
+
 
   def _get_action_probs(self, params, states, legal_one_hots):
     """Returns the soft-max action probability distribution."""
@@ -336,6 +401,7 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
     # info states shape: (128, 67) - > (batch size, state_size)
     q_values = self.hk_network.apply(params, states)[0]
     # print("q_values get action probs: ", q_values)
+    # print("q_values shape in get action probs: ", q_values.shape )
     legal_q_values = q_values + (1 - legal_one_hots) * ILLEGAL_ACTION_PENALTY
     return jax.nn.softmax(legal_q_values / self._tau)
 
@@ -347,14 +413,15 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
     # modified according to the Munchausen trick.
     # Change 3: output of LSTM is different, None argument is removed by without_apply_rng
     # q_values, _ = self.hk_network.apply(params, info_states)
-    states = jax.numpy.hstack((info_states, distributions))
-    next_states = jax.numpy.hstack((next_info_states, next_distributions))
+    states = jax.numpy.dstack((info_states, distributions))
+    next_states = jax.numpy.dstack((next_info_states, next_distributions))
 
     q_values = self.hk_network.apply(params, states)[0]
     # Change 4: output of LSTM is different, None argument is removed by without_apply_rng
     # target_q_values, _ = self.hk_network.apply(params_target, next_info_states)
     target_q_values = self.hk_network.apply(params_target, next_states)[0]
-
+    # print("info states in loss shape: ", info_states.shape)
+    # print("legal one hots in loss shape: ", legal_one_hots.shape)
     r_term = rewards
     if self._with_munchausen:
       probs = self._get_action_probs(params_prev, states, legal_one_hots)
@@ -398,7 +465,7 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
                                                actions, legal_one_hots, rewards,
                                                next_info_states,
                                                are_final_steps,
-                                               next_legal_one_hots, 
+                                               next_legal_one_hots,
                                                distributions, 
                                                next_distributions)
       new_params, new_opt_state = self._opt_update_fn(params, opt_state,
@@ -423,21 +490,100 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
       The average loss obtained on this batch of transitions or `None`.
     """
 
-    if (len(self._replay_buffer) < self._batch_size or
-        len(self._replay_buffer) < self._min_buffer_size_to_learn):
+    # Trajectory change 5: sample trajectory replay buffer
+    if (len(self._trajectory_replay_buffer) * self._trajectory_sample_length < self._batch_size or
+        len(self._trajectory_replay_buffer) < self._min_trajectory_replay_buffer_size_to_learn):
+      # print("Conditions not fulfilled.")
       return None
 
-    transitions = self._replay_buffer.sample(self._batch_size)
+    # if (len(self._replay_buffer) < self._batch_size or
+    #     len(self._replay_buffer) < self._min_buffer_size_to_learn):
+    #   return None
+
+    # batch as trajectory
+    # one_traj = self._trajectory_replay_buffer.sample(1)[0]
+    # # print("traj replay buffer length: ", len(one_traj))
+    # sequence = []
+    # for i in range(len(one_traj)-1):
+    #   sequence.append(Transition(
+    #     info_state=one_traj[i].info_state,
+    #     action=one_traj[i].action,
+    #     legal_one_hots=one_traj[i].legal_one_hots,
+    #     reward=one_traj[i].reward,
+    #     next_info_state=one_traj[i + 1].info_state,
+    #     is_final_step=float(one_traj[i + 1].is_final_step),
+    #     next_legal_one_hots=one_traj[i + 1].legal_one_hots,
+    #   ))
+
+    # info_states = np.asarray([t.info_state for t in sequence])
+    # actions = np.asarray([self._to_one_hot(t.action) for t in sequence])
+    # legal_one_hots = np.asarray([t.legal_one_hots for t in sequence])
+    # rewards = np.asarray([t.reward for t in sequence])
+    # next_info_states = np.asarray([t.next_info_state for t in sequence])
+    # are_final_steps = np.asarray([t.is_final_step for t in sequence])
+    # next_legal_one_hots = np.asarray(
+    #   [t.next_legal_one_hots for t in sequence])
+
+
+    # batch of sequences
+    transitions = []
+    batch_traj = self._trajectory_replay_buffer.sample(self._batch_size)
+    for trajectory in batch_traj:
+      one_traj = []
+      for i in range(len(trajectory)-1):
+        one_traj.append(Transition(
+          info_state=trajectory[i].info_state,
+          action=trajectory[i].action,
+          legal_one_hots=trajectory[i].legal_one_hots,
+          reward=trajectory[i].reward,
+          next_info_state=trajectory[i + 1].info_state,
+          is_final_step=float(trajectory[i + 1].is_final_step),
+          next_legal_one_hots=trajectory[i + 1].legal_one_hots,
+          distribution = trajectory[i].distribution,
+          next_distribution = trajectory[i+1].distribution
+        ))
+      info_states = np.asarray([t.info_state for t in one_traj])
+      actions = np.asarray([self._to_one_hot(t.action) for t in one_traj])
+      legal_one_hots = np.asarray([t.legal_one_hots for t in one_traj])
+      rewards = np.asarray([t.reward for t in one_traj])
+      next_info_states = np.asarray([t.next_info_state for t in one_traj])
+      are_final_steps = np.asarray([t.is_final_step for t in one_traj])
+      next_legal_one_hots = np.asarray(
+        [t.next_legal_one_hots for t in one_traj])
+      distributions = np.asarray([t.distribution for t in one_traj])
+      next_distributions = np.asarray([t.next_distribution for t in one_traj])
+
+      transitions.append(Transition(
+        info_state=info_states,
+        action=actions,
+        legal_one_hots=legal_one_hots,
+        reward=rewards,
+        next_info_state=next_info_states,
+        is_final_step=are_final_steps,
+        next_legal_one_hots=next_legal_one_hots,
+        distribution = distributions,
+        next_distribution = next_distributions
+      ))
+
+    # size right now: (batch_size, time sequence, state space)
     info_states = np.asarray([t.info_state for t in transitions])
-    actions = np.asarray([self._to_one_hot(t.action) for t in transitions])
-    legal_one_hots = np.asarray([t.legal_one_hots for t in transitions])
-    rewards = np.asarray([t.reward for t in transitions])
+    actions = np.asarray([t.action for t in transitions])[:,self._burn_in_length:,:]
+    legal_one_hots = np.asarray([t.legal_one_hots for t in transitions])[:,self._burn_in_length:,:]
+    rewards = np.asarray([t.reward for t in transitions])[:,self._burn_in_length:]
     next_info_states = np.asarray([t.next_info_state for t in transitions])
-    are_final_steps = np.asarray([t.is_final_step for t in transitions])
+    are_final_steps = np.asarray([t.is_final_step for t in transitions])[:,self._burn_in_length:]
     next_legal_one_hots = np.asarray(
-        [t.next_legal_one_hots for t in transitions])
+        [t.next_legal_one_hots for t in transitions])[:,self._burn_in_length:,:]
     distributions = np.asarray([t.distribution for t in transitions])
     next_distributions = np.asarray([t.next_distribution for t in transitions])
+
+    # print("info_state shape: ", info_states.shape)
+    # print("actions shape: ", actions.shape)
+    # print("legal one hots shape: ", legal_one_hots.shape)
+    # print("rewards shape: ", rewards.shape)
+    # print("next info_state shape: ", next_info_states.shape)
+    # print("are final steps shape: ", are_final_steps.shape)
+    # print("next legal one hots shape: ", next_legal_one_hots.shape)
 
     self._params_q_network, self._opt_state, loss_val = self._jit_update(
         self._params_q_network, self._params_target_q_network,
@@ -524,10 +670,10 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
     return self._last_loss_value
 
 
-class SoftMaxRNNMunchausenDQN(rl_agent.AbstractAgent):
+class SoftMaxObsTRNNMunchausenDQN(rl_agent.AbstractAgent):
   """Wraps a Munchausen DQN agent to use soft-max action selection."""
 
-  def __init__(self, agent: RNNMunchausenDQN, tau: Optional[float] = None):
+  def __init__(self, agent: ObsTRNNMunchausenDQN, tau: Optional[float] = None):
     self._agent = agent
     self._tau = tau
 
@@ -536,7 +682,7 @@ class SoftMaxRNNMunchausenDQN(rl_agent.AbstractAgent):
         time_step, is_evaluation=is_evaluation, use_softmax=True, tau=self._tau)
 
 
-class RNNDeepOnlineMirrorDescent(object):
+class ObsTRNNDeepOnlineMirrorDescent(object):
   """The deep online mirror descent algorithm."""
 
   def __init__(self,
@@ -562,7 +708,7 @@ class RNNDeepOnlineMirrorDescent(object):
     assert len(envs) == len(agents)
     # Make sure that the agents are all RNNMunchausenDQN.
     for agent in agents:
-      assert isinstance(agent, RNNMunchausenDQN)
+      assert isinstance(agent, ObsTRNNMunchausenDQN)
 
     self._game = game
 
@@ -625,7 +771,7 @@ class RNNDeepOnlineMirrorDescent(object):
     """
     return rl_obs_agent_policy.ObsJointRLAgentPolicy(
         self._game, {
-            idx: SoftMaxRNNMunchausenDQN(agent, tau=tau)
+            idx: SoftMaxObsTRNNMunchausenDQN(agent, tau=tau)
             for idx, agent in enumerate(self._agents)
         }, self._use_observation)
 

@@ -34,7 +34,10 @@ def main(argv: Sequence[str]):
         alg = ObsMunchausenDeepMirrorDescent(game_name, game_settings, cfg, logdir=logdir)
     elif FLAGS.algorithm == 'fo-rnn-momd':
         logdir = 'runs/FO-RNNMOMD' if not FLAGS.logdir else FLAGS.logdir
-        raise ObsRNNMunchausenDeepMirrorDescent(game_name, game_settings, cfg, logdir=logdir)
+        alg = ObsRNNMunchausenDeepMirrorDescent(game_name, game_settings, cfg, logdir=logdir)
+    elif FLAGS.algorithm == 'fo-trnn-momd':
+        logdir = 'runs/FO-TRNNMOMD' if not FLAGS.logdir else FLAGS.logdir
+        alg = ObsTRNNMunchausenDeepMirrorDescent(game_name, game_settings, cfg, logdir=logdir)
 
     elif FLAGS.algorithm == 'po-dafp':
         logdir = 'runs/PO-DAFP' if not FLAGS.logdir else FLAGS.logdir
@@ -44,7 +47,10 @@ def main(argv: Sequence[str]):
         alg = ObsMunchausenDeepMirrorDescent(game_name, game_settings, cfg, observability=True, logdir=logdir)
     elif FLAGS.algorithm == 'po-rnn-momd':
         logdir = 'runs/PO-RNNMOMD' if not FLAGS.logdir else FLAGS.logdir
-        raise ObsRNNMunchausenDeepMirrorDescent(game_name, game_settings, cfg, observability=True, logdir=logdir)
+        alg = ObsRNNMunchausenDeepMirrorDescent(game_name, game_settings, cfg, logdir=logdir)
+    elif FLAGS.algorithm == 'po-trnn-momd':
+        logdir = 'runs/PO-TRNNMOMD' if not FLAGS.logdir else FLAGS.logdir
+        alg = ObsTRNNMunchausenDeepMirrorDescent(game_name, game_settings, cfg, observability=True, logdir=logdir)
     else:
         print("usage: evaluation.py --config=<config_dir> --algorithm=['afp', 'dmomd', 'rnn-momd', 'fo-dmomd', 'po-dmomd', 'po-rnn-momd']")
         exit()

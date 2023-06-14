@@ -1,4 +1,4 @@
-from algorithms import obs_dmomd, obs_dqn, rnn_momd, obs_afp
+from algorithms import obs_dmomd, obs_dqn, rnn_momd, obs_afp, obs_trnn_momd, obs_rnn_momd
 from rl import rl_obs_environment
 
 from open_spiel.python.mfg.algorithms import munchausen_deep_mirror_descent, average_network_fictitious_play
@@ -304,18 +304,19 @@ class RNNMunchausenDeepMirrorDescent(MFGAlgorithm):
                                                                         num_episodes_per_iteration=num_episodes_per_iteration)
 
 class ObsRNNMunchausenDeepMirrorDescent(MFGAlgorithm):
-    def __init__(self, game_name, game_setting, cfg, observability=False, logdir='runs/FO-RNN-MOMD'):
+    def __init__(self, game_name, game_setting, cfg, logdir='runs/RNN-MOMD'):
         super().__init__(game_name, game_setting, cfg)
 
         self.writer = SummaryWriter(logdir)
 
-        envs = [rl_environment.Environment(self.game, mfg_distribution=self.uniform_dist, mfg_population=p,
-                observation_type=rl_environment.ObservationType.OBSERVATION) for p in range(self.num_players)]
+        envs = [rl_obs_environment.ObsEnvironment(self.game, mfg_distribution=self.uniform_dist, mfg_population=p,
+                observation_type=rl_environment.ObservationType.OBSERVATION, partial_obs = True) for p in range(self.num_players)]
 
         env = envs[0]
         info_state_size = env.observation_spec()["info_state"][0]
         num_actions = env.action_spec()["num_actions"]
-
+        distribution_size = env.observation_spec()["distribution"][0]
+        
         kwargs = {
             "alpha": cfg['rnn_munchausen_omd']['alpha'],
             "batch_size": cfg['rnn_munchausen_omd']['batch_size'],
@@ -337,11 +338,61 @@ class ObsRNNMunchausenDeepMirrorDescent(MFGAlgorithm):
             "seed": cfg['rnn_munchausen_omd']['seed'],
             "tau": cfg['rnn_munchausen_omd']['tau'],
             "update_target_network_every": cfg['rnn_munchausen_omd']['update_target_network_every'],
-            "with_munchausen": cfg['rnn_munchausen_omd']['with_munchausen']
+            "with_munchausen": cfg['rnn_munchausen_omd']['with_munchausen'],
+            "partial_obs": True
         }
-        agents = [rnn_momd.RNNMunchausenDQN(p, info_state_size, num_actions, **kwargs)
+        agents = [obs_rnn_momd.ObsRNNMunchausenDQN(p, info_state_size + distribution_size, num_actions, **kwargs)
                 for p in range(self.num_players)]
 
         num_episodes_per_iteration = cfg['rnn_munchausen_omd']['num_episodes_per_iteration']
-        self.md = rnn_momd.RNNDeepOnlineMirrorDescent(self.game, envs, agents, eval_every=cfg['rnn_munchausen_omd']['eval_every'],
+        self.md = obs_rnn_momd.ObsRNNDeepOnlineMirrorDescent(self.game, envs, agents, eval_every=cfg['rnn_munchausen_omd']['eval_every'],
+                                                                        num_episodes_per_iteration=num_episodes_per_iteration)
+
+
+class ObsTRNNMunchausenDeepMirrorDescent(MFGAlgorithm):
+    def __init__(self, game_name, game_setting, cfg, observability=False, logdir='runs/FO-RNN-MOMD'):
+        super().__init__(game_name, game_setting, cfg)
+
+        self.writer = SummaryWriter(logdir)
+
+        envs = [rl_obs_environment.ObsEnvironment(self.game, mfg_distribution=self.uniform_dist, mfg_population=p,
+                observation_type=rl_environment.ObservationType.OBSERVATION, partial_obs = True) for p in range(self.num_players)]
+        
+        env = envs[0]
+        info_state_size = env.observation_spec()["info_state"][0]
+        num_actions = env.action_spec()["num_actions"]
+        distribution_size = env.observation_spec()["distribution"][0]
+
+        kwargs = {
+            "alpha": cfg['trnn_momd']['alpha'],
+            "batch_size": cfg['trnn_momd']['batch_size'],
+            "discount_factor": cfg['trnn_momd']['discount_factor'],
+            "epsilon_decay_duration": cfg['trnn_momd']['epsilon_decay_duration'],
+            "epsilon_end": cfg['trnn_momd']['epsilon_end'],
+            "epsilon_power": cfg['trnn_momd']['epsilon_power'],
+            "epsilon_start": cfg['trnn_momd']['epsilon_start'],
+            "gradient_clipping": cfg['trnn_momd']['gradient_clipping'],
+            "hidden_layers_sizes": [int(l) for l in cfg['trnn_momd']['hidden_layers_sizes']],
+            "huber_loss_parameter": cfg['trnn_momd']['huber_loss_parameter'],
+            "learn_every": cfg['trnn_momd']['learn_every'],
+            "learning_rate": cfg['trnn_momd']['learning_rate'],
+            "loss": cfg['trnn_momd']['loss'],
+            "optimizer": cfg['trnn_momd']['optimizer'],
+            "trajectory_replay_buffer_capacity": cfg['trnn_momd']['trajectory_replay_buffer_capacity'],
+            "min_trajectory_replay_buffer_size_to_learn": cfg['trnn_momd']['min_trajectory_replay_buffer_size_to_learn'],
+            "trajectory_sample_length": cfg['trnn_momd']['trajectory_sample_length'],
+            "trajectory_sample_overlap_length": cfg['trnn_momd']['trajectory_sample_overlap_length'],
+            "burn_in_length": cfg['trnn_momd']['burn_in_length'],
+            "reset_replay_buffer_on_update": cfg['trnn_momd']['reset_replay_buffer_on_update'],
+            "seed": cfg['trnn_momd']['seed'],
+            "tau": cfg['trnn_momd']['tau'],
+            "update_target_network_every": cfg['trnn_momd']['update_target_network_every'],
+            "with_munchausen": cfg['trnn_momd']['with_munchausen'],
+            "partial_obs": True
+        }
+        agents = [obs_trnn_momd.ObsTRNNMunchausenDQN(p, info_state_size+distribution_size, num_actions, **kwargs) 
+                  for p in range(self.num_players)]
+
+        num_episodes_per_iteration = cfg['trnn_momd']['num_episodes_per_iteration']
+        self.md = obs_trnn_momd.ObsTRNNDeepOnlineMirrorDescent(self.game, envs, agents, eval_every=cfg['trnn_momd']['eval_every'],
                                                                         num_episodes_per_iteration=num_episodes_per_iteration)
