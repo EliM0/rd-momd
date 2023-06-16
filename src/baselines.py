@@ -9,13 +9,14 @@ from open_spiel.python.jax import dqn
 from open_spiel.python import rl_environment
 from open_spiel.python import policy
 from torch.utils.tensorboard import SummaryWriter
+import pyspiel
 
 class MFGAlgorithm:
     def __init__(self, game_name, game_setting, cfg):
         self.num_iterations = cfg['iterations']
         self.cfg = cfg
-
-        self.game = factory.create_game_with_setting(game_name, game_setting)
+         
+        self.game = pyspiel.load_game(game_name, {'horizon': cfg['horizon']})
         self.num_players = self.game.num_players()
 
         uniform_policy = policy.UniformRandomPolicy(self.game)

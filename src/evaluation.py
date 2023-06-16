@@ -5,7 +5,7 @@ from typing import Sequence
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string('config', './configs/crowd_config.yml', 'Config file with the algorithms parameters.')
-flags.DEFINE_string('algorithm', './configs/crowd_config.yml', 'Config file with the algorithms parameters.')
+flags.DEFINE_string('algorithm', 'dmomd', 'Config file with the algorithms parameters.')
 flags.DEFINE_string('logdir', None, 'Directory to save the logs')
 
 def main(argv: Sequence[str]):
