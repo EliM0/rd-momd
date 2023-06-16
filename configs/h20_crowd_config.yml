@@ -1,7 +1,8 @@
 iterations: 100
 game_name: 'mfg_crowd_modelling_2d'
 game_settings: null
-use_game_setting: True
+use_game_setting: False
+horizon: 20
 
 munchausen_omd:
     batch_size: 128                           # Number of transitions to sample at each learning step.

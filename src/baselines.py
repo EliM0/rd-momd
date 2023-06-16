@@ -16,7 +16,11 @@ class MFGAlgorithm:
         self.num_iterations = cfg['iterations']
         self.cfg = cfg
          
-        self.game = pyspiel.load_game(game_name, {'horizon': cfg['horizon']})
+        if cfg['use_game_setting']:
+            self.game = factory.create_game_with_setting(game_name, game_setting)
+        else:
+            self.game = pyspiel.load_game(game_name, {'horizon': cfg['horizon']})
+
         self.num_players = self.game.num_players()
 
         uniform_policy = policy.UniformRandomPolicy(self.game)
