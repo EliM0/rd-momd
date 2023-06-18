@@ -1,17 +1,18 @@
-From 832c0c9991218260a7d49c5569bf62e3c1f3ecf1 Mon Sep 17 00:00:00 2001
+From 12b370927ac1036c6c286bd0bd49f84ddfd4efe9 Mon Sep 17 00:00:00 2001
 From: Bjarni Thor <bjarni@bjarnithor.com>
 Date: Tue, 6 Jun 2023 21:01:15 +0200
 Subject: [PATCH] Get the current population distribution from the environment.
 
 ---
- open_spiel/games/mfg/crowd_modelling_2d.cc    | 12 ++++++++++
- open_spiel/games/mfg/crowd_modelling_2d.h     |  3 +++
- .../munchausen_deep_mirror_descent.py         | 17 ++++++++++++++
- open_spiel/python/pybind11/pyspiel.cc         |  7 ++++++
- open_spiel/scripts/install.sh                 |  8 +++----
- open_spiel/spiel.cc                           | 14 +++++++++++
- open_spiel/spiel.h                            | 23 +++++++++++++++++++
- 7 files changed, 80 insertions(+), 4 deletions(-)
+ open_spiel/games/mfg/crowd_modelling_2d.cc | 12 +++++++++++
+ open_spiel/games/mfg/crowd_modelling_2d.h  |  3 +++
+ open_spiel/python/pybind11/pyspiel.cc      |  7 +++++++
+ open_spiel/python/rl_agent_policy.py       |  2 +-
+ open_spiel/python/rl_environment.py        |  2 +-
+ open_spiel/scripts/install.sh              |  8 ++++----
+ open_spiel/spiel.cc                        | 14 +++++++++++++
+ open_spiel/spiel.h                         | 23 ++++++++++++++++++++++
+ 8 files changed, 65 insertions(+), 6 deletions(-)
 
 diff --git a/open_spiel/games/mfg/crowd_modelling_2d.cc b/open_spiel/games/mfg/crowd_modelling_2d.cc
 index f1579023..31a2f8bf 100644
@@ -64,41 +65,6 @@ index d0402004..54c0d758 100644
    int MaxChanceOutcomes() const override {
      return std::max(size_ * size_, kNumChanceActions);
    }
-diff --git a/open_spiel/python/mfg/algorithms/munchausen_deep_mirror_descent.py b/open_spiel/python/mfg/algorithms/munchausen_deep_mirror_descent.py
-index cc0c48ad..aabfad3c 100644
---- a/open_spiel/python/mfg/algorithms/munchausen_deep_mirror_descent.py
-+++ b/open_spiel/python/mfg/algorithms/munchausen_deep_mirror_descent.py
-@@ -502,13 +502,30 @@ class DeepOnlineMirrorDescent(object):
- 
-     This will evaluate the Q-network for current policy and distribution.
-     """
-+    # TODO: Remove me
-+    def print_distribution(distribution):
-+      import math
-+      board_size = int(math.sqrt(len(distribution)))
-+      n = len(distribution)
-+      for i in range(board_size):
-+        for j in range(board_size):
-+          print(distribution[i * board_size + j], end=" ")
-+        print()
-+
-     for ep in range(self._num_episodes_per_iteration):
-       for env, agent in zip(self._envs, self._agents):
-         time_step = env.reset()
-+        print("New episode")
-         while not time_step.last():
-+          print("Agent takes step")
-+
-+          # TODO: Remove me
-+          print_distribution(env._state.distribution_tensor())
-+
-           agent_output = agent.step(time_step, use_softmax=False)
-           action_list = [agent_output.action]
-           time_step = env.step(action_list)
-+        print("\n\n\n")
- 
-         # Episode is over, step all agents with final info state.
-         agent.step(time_step, use_softmax=False)
 diff --git a/open_spiel/python/pybind11/pyspiel.cc b/open_spiel/python/pybind11/pyspiel.cc
 index a85bea18..eddeb8a2 100644
 --- a/open_spiel/python/pybind11/pyspiel.cc
@@ -124,6 +90,28 @@ index a85bea18..eddeb8a2 100644
        .def("policy_tensor_shape", &Game::PolicyTensorShape)
        .def("deserialize_state", &Game::DeserializeState)
        .def("max_game_length", &Game::MaxGameLength)
+diff --git a/open_spiel/python/rl_agent_policy.py b/open_spiel/python/rl_agent_policy.py
+index 9771d0ca..ed8f7f11 100644
+--- a/open_spiel/python/rl_agent_policy.py
++++ b/open_spiel/python/rl_agent_policy.py
+@@ -97,4 +97,4 @@ class RLAgentPolicy(JointRLAgentPolicy):
+ 
+   def action_probabilities(self, state, player_id=None):
+     return super().action_probabilities(
+-        state, self._player_id if player_id is None else player_id)
++        state, self._player_id if player_id is None else player_id)
+\ No newline at end of file
+diff --git a/open_spiel/python/rl_environment.py b/open_spiel/python/rl_environment.py
+index 8a0a7482..9438d972 100644
+--- a/open_spiel/python/rl_environment.py
++++ b/open_spiel/python/rl_environment.py
+@@ -477,4 +477,4 @@ class Environment(object):
+     """Updates the distribution over the states of the mean field game."""
+     assert (
+         self._game.get_type().dynamics == pyspiel.GameType.Dynamics.MEAN_FIELD)
+-    self._mfg_distribution = mfg_distribution
++    self._mfg_distribution = mfg_distribution
+\ No newline at end of file
 diff --git a/open_spiel/scripts/install.sh b/open_spiel/scripts/install.sh
 index 8942700e..dfc3de4c 100755
 --- a/open_spiel/scripts/install.sh
