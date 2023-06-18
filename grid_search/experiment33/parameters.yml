@@ -1,0 +1,2 @@
+epsilon: 0.2
+epsilon_decay_duration: 600000
