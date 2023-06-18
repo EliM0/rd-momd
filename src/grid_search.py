@@ -5,12 +5,12 @@ import yaml
 import utils
 
 def main():
-    cfg = utils.read_config('./configs/crowd_config.yml')
+    cfg = utils.read_config('./configs/h20_crowd_config.yml')
 
     game_name = cfg['game_name']
     game_settings = cfg['game_settings']
 
-    param_grid = {'epsilon_decay_duration': [300000, 400000, 500000, 700000], 'epsilon': [0.1, 0.2, 0.3, 0.4, 0.5]}
+    param_grid = {'epsilon_decay_duration': [100000, 200000, 300000, 400000, 500000, 600000, 700000], 'epsilon': [0.1, 0.2, 0.3, 0.4]}
 
     best_score = np.inf
     best_grid = param_grid
