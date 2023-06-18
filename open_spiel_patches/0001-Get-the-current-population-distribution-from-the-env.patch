@@ -1,0 +1,221 @@
+From 832c0c9991218260a7d49c5569bf62e3c1f3ecf1 Mon Sep 17 00:00:00 2001
+From: Bjarni Thor <bjarni@bjarnithor.com>
+Date: Tue, 6 Jun 2023 21:01:15 +0200
+Subject: [PATCH] Get the current population distribution from the environment.
+
+---
+ open_spiel/games/mfg/crowd_modelling_2d.cc    | 12 ++++++++++
+ open_spiel/games/mfg/crowd_modelling_2d.h     |  3 +++
+ .../munchausen_deep_mirror_descent.py         | 17 ++++++++++++++
+ open_spiel/python/pybind11/pyspiel.cc         |  7 ++++++
+ open_spiel/scripts/install.sh                 |  8 +++----
+ open_spiel/spiel.cc                           | 14 +++++++++++
+ open_spiel/spiel.h                            | 23 +++++++++++++++++++
+ 7 files changed, 80 insertions(+), 4 deletions(-)
+
+diff --git a/open_spiel/games/mfg/crowd_modelling_2d.cc b/open_spiel/games/mfg/crowd_modelling_2d.cc
+index f1579023..31a2f8bf 100644
+--- a/open_spiel/games/mfg/crowd_modelling_2d.cc
++++ b/open_spiel/games/mfg/crowd_modelling_2d.cc
+@@ -491,6 +491,14 @@ void CrowdModelling2dState::ObservationTensor(Player player,
+   values[2 * size_ + t_] = 1.;
+ }
+ 
++void CrowdModelling2dState::DistributionTensor(Player player,
++                                               absl::Span<float> values) const {
++  SPIEL_CHECK_EQ(values.size(), distribution_.size());
++  for (int i = 0; i < distribution_.size(); ++i) {
++    values[i] = distribution_[i];
++  }
++}
++
+ std::unique_ptr<State> CrowdModelling2dState::Clone() const {
+   return std::unique_ptr<State>(new CrowdModelling2dState(*this));
+ }
+@@ -531,6 +539,10 @@ std::vector<int> CrowdModelling2dGame::ObservationTensorShape() const {
+   return {2 * ParameterValue<int>("size") + ParameterValue<int>("horizon") + 1};
+ }
+ 
++std::vector<int> CrowdModelling2dGame::DistributionTensorShape() const {
++  return {ParameterValue<int>("size") * ParameterValue<int>("size")};
++}
++
+ std::unique_ptr<State> CrowdModelling2dGame::DeserializeState(
+     const std::string& str) const {
+   std::vector<std::string> lines = absl::StrSplit(str, '\n');
+diff --git a/open_spiel/games/mfg/crowd_modelling_2d.h b/open_spiel/games/mfg/crowd_modelling_2d.h
+index d0402004..54c0d758 100644
+--- a/open_spiel/games/mfg/crowd_modelling_2d.h
++++ b/open_spiel/games/mfg/crowd_modelling_2d.h
+@@ -123,6 +123,8 @@ class CrowdModelling2dState : public State {
+   std::string ObservationString(Player player) const override;
+   void ObservationTensor(Player player,
+                          absl::Span<float> values) const override;
++  void DistributionTensor(Player player,
++                          absl::Span<float> values) const override;
+   std::unique_ptr<State> Clone() const override;
+   std::vector<Action> LegalActions() const override;
+   ActionsAndProbs ChanceOutcomes() const override;
+@@ -195,6 +197,7 @@ class CrowdModelling2dGame : public Game {
+     return horizon_ + 1;
+   }
+   std::vector<int> ObservationTensorShape() const override;
++  std::vector<int> DistributionTensorShape() const override;
+   int MaxChanceOutcomes() const override {
+     return std::max(size_ * size_, kNumChanceActions);
+   }
+diff --git a/open_spiel/python/mfg/algorithms/munchausen_deep_mirror_descent.py b/open_spiel/python/mfg/algorithms/munchausen_deep_mirror_descent.py
+index cc0c48ad..aabfad3c 100644
+--- a/open_spiel/python/mfg/algorithms/munchausen_deep_mirror_descent.py
++++ b/open_spiel/python/mfg/algorithms/munchausen_deep_mirror_descent.py
+@@ -502,13 +502,30 @@ class DeepOnlineMirrorDescent(object):
+ 
+     This will evaluate the Q-network for current policy and distribution.
+     """
++    # TODO: Remove me
++    def print_distribution(distribution):
++      import math
++      board_size = int(math.sqrt(len(distribution)))
++      n = len(distribution)
++      for i in range(board_size):
++        for j in range(board_size):
++          print(distribution[i * board_size + j], end=" ")
++        print()
++
+     for ep in range(self._num_episodes_per_iteration):
+       for env, agent in zip(self._envs, self._agents):
+         time_step = env.reset()
++        print("New episode")
+         while not time_step.last():
++          print("Agent takes step")
++
++          # TODO: Remove me
++          print_distribution(env._state.distribution_tensor())
++
+           agent_output = agent.step(time_step, use_softmax=False)
+           action_list = [agent_output.action]
+           time_step = env.step(action_list)
++        print("\n\n\n")
+ 
+         # Episode is over, step all agents with final info state.
+         agent.step(time_step, use_softmax=False)
+diff --git a/open_spiel/python/pybind11/pyspiel.cc b/open_spiel/python/pybind11/pyspiel.cc
+index a85bea18..eddeb8a2 100644
+--- a/open_spiel/python/pybind11/pyspiel.cc
++++ b/open_spiel/python/pybind11/pyspiel.cc
+@@ -320,6 +320,10 @@ PYBIND11_MODULE(pyspiel, m) {
+            (std::vector<float>(State::*)(int) const) & State::ObservationTensor)
+       .def("observation_tensor",
+            (std::vector<float>(State::*)() const) & State::ObservationTensor)
++      .def("distribution_tensor",
++           (std::vector<float>(State::*)(int) const) & State::DistributionTensor)
++      .def("distribution_tensor",
++           (std::vector<float>(State::*)() const) & State::DistributionTensor)
+       .def("clone", &State::Clone)
+       .def("child", &State::Child)
+       .def("undo_action", &State::UndoAction)
+@@ -372,6 +376,9 @@ PYBIND11_MODULE(pyspiel, m) {
+       .def("observation_tensor_shape", &Game::ObservationTensorShape)
+       .def("observation_tensor_layout", &Game::ObservationTensorLayout)
+       .def("observation_tensor_size", &Game::ObservationTensorSize)
++      .def("distribution_tensor_shape", &Game::DistributionTensorShape)
++      .def("distribution_tensor_layout", &Game::DistributionTensorLayout)
++      .def("distribution_tensor_size", &Game::DistributionTensorSize)
+       .def("policy_tensor_shape", &Game::PolicyTensorShape)
+       .def("deserialize_state", &Game::DeserializeState)
+       .def("max_game_length", &Game::MaxGameLength)
+diff --git a/open_spiel/scripts/install.sh b/open_spiel/scripts/install.sh
+index 8942700e..dfc3de4c 100755
+--- a/open_spiel/scripts/install.sh
++++ b/open_spiel/scripts/install.sh
+@@ -251,10 +251,10 @@ if [[ "$OSTYPE" == "linux-gnu" ]]; then
+   APT_GET=`which apt-get`
+   if [ "$APT_GET" = "" ]
+   then
+-     echo "This script assumes a Debian-based Linux distribution. Please install these packages manually or using your distribution's package manager:"
+-     echo "$EXT_DEPS"
+-     exit 1
+-  fi
++    echo "This script assumes a Debian-based Linux distribution. Please install these packages manually or using your distribution's package manager:"
++    echo "$EXT_DEPS"
++    exit 1
++   fi
+ 
+   # We install the packages only if they are not present yet.
+   # See https://stackoverflow.com/questions/18621990/bash-get-exit-status-of-command-when-set-e-is-active
+diff --git a/open_spiel/spiel.cc b/open_spiel/spiel.cc
+index 1d0e0493..314a7515 100644
+--- a/open_spiel/spiel.cc
++++ b/open_spiel/spiel.cc
+@@ -770,6 +770,20 @@ void State::ObservationTensor(Player player, std::vector<float>* values) const {
+   ObservationTensor(player, absl::MakeSpan(*values));
+ }
+ 
++std::vector<float> State::DistributionTensor(Player player) const {
++  SPIEL_CHECK_GE(player, 0);
++  SPIEL_CHECK_LT(player, num_players_);
++  std::vector<float> observation(game_->DistributionTensorSize());
++  DistributionTensor(player, absl::MakeSpan(observation));
++  return observation;
++}
++
++void State::DistributionTensor(Player player, std::vector<float>* values) const {
++  // Retained for backwards compatibility.
++  values->resize(game_->DistributionTensorSize());
++  DistributionTensor(player, absl::MakeSpan(*values));
++}
++
+ std::vector<float> State::InformationStateTensor(Player player) const {
+   // We add this player check, to prevent errors if the game implementation
+   // lacks that check (in particular as this function is the one used in
+diff --git a/open_spiel/spiel.h b/open_spiel/spiel.h
+index c94e6e31..557fc348 100644
+--- a/open_spiel/spiel.h
++++ b/open_spiel/spiel.h
+@@ -562,6 +562,16 @@ class State {
+   // Return a copy of this state.
+   virtual std::unique_ptr<State> Clone() const = 0;
+ 
++  virtual void DistributionTensor(Player player,
++                                  absl::Span<float> values) const {
++    SpielFatalError("DistributionTensor unimplemented!");
++  }
++  std::vector<float> DistributionTensor(Player player) const;
++  std::vector<float> DistributionTensor() const {
++    return DistributionTensor(CurrentPlayer());
++  }
++  void DistributionTensor(Player player, std::vector<float>* values) const;
++
+   // Creates the child from State corresponding to action.
+   std::unique_ptr<State> Child(Action action) const {
+     std::unique_ptr<State> child = Clone();
+@@ -841,6 +851,13 @@ class Game : public std::enable_shared_from_this<Game> {
+     return TensorLayout::kCHW;
+   }
+ 
++  virtual std::vector<int> DistributionTensorShape() const {
++    SpielFatalError("DistributionTensorShape unimplemented.");
++  }
++  virtual TensorLayout DistributionTensorLayout() const {
++    return TensorLayout::kCHW;
++  }
++
+   // The size of the (flat) vector needed for the observation tensor-like
+   // format.
+   int ObservationTensorSize() const {
+@@ -849,6 +866,12 @@ class Game : public std::enable_shared_from_this<Game> {
+                          : absl::c_accumulate(shape, 1, std::multiplies<int>());
+   }
+ 
++  int DistributionTensorSize() const {
++    std::vector<int> shape = DistributionTensorShape();
++    return shape.empty() ? 0
++                         : absl::c_accumulate(shape, 1, std::multiplies<int>());
++  }
++
+   // Describes the structure of the policy representation in a
+   // tensor-like format. This is especially useful for experiments involving
+   // reinforcement learning and neural networks. Note: the actual policy is
+-- 
+2.40.1
+

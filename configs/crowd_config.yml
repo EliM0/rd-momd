@@ -1,8 +1,7 @@
 iterations: 100
 game_name: 'mfg_crowd_modelling_2d'
 game_settings: null
-
-plot_title: 'Crowd Motion Environment'
+use_game_setting: True
 
 munchausen_omd:
     batch_size: 128                           # Number of transitions to sample at each learning step.
@@ -95,3 +94,36 @@ average_fp:
     avg_pol_learning_rate: 0.01                        # Learning rate for inner rl agent.
     avg_gradient_clipping: 100                         # Value to clip the gradient to.
     avg_pol_tau: 10.0                                  # Temperature for softmax in policy.
+
+trnn_momd:
+    batch_size: 128                           # Number of transitions to sample at each learning step.
+    learn_every: 64                           # Number of steps between learning updates.
+    num_episodes_per_iteration: 1000          # Number of training eepisodes for each iteration.
+    num_iterations: 100                       # Number of iterations.
+    epsilon_decay_duration: 500000            # Number of game steps over which epsilon is decayed.
+    epsilon_power: 1                          # Power for the epsilon decay.
+    epsilon_start: 0.3                        # Starting exploration parameter.
+    epsilon_end: 0.3                          # "Final exploration parameter.
+    discount_factor: 1.0                      # Discount factor for future rewards.
+    reset_replay_buffer_on_update: False      # Reset the replay buffer when the softmax policy is updated.
+    seed: 42                                  # Training seed.
+    eval_every: 200                           # Episode frequency at which the agents are evaluated.
+    hidden_layers_sizes: ["128", "128"]       # Number of hidden units in the avg-net and Q-net.
+    update_target_network_every: 200          # Number of steps between DQN target network updates.
+    trajectory_replay_buffer_capacity: 40000  # Size of the trajectory replay buffer.
+    min_trajectory_replay_buffer_size_to_learn: 500  # Number of trajectories in buffer before learning begins.
+    trajectory_sample_length: 20              # Length of trajectory.
+    trajectory_sample_overlap_length: 18      # Length of overlapping.
+    burn_in_length: 15                        # Length of overlapping.
+    optimizer: "adam"                         # ["adam", "sgd"] Optimizer
+    learning_rate: 0.01                       # Learning rate for inner rl agent.
+    loss: "mse"                               # ["mse", "huber"] Loss function.
+    huber_loss_parameter: 1.0                 # Parameter for Huber loss.
+    gradient_clipping: null                   # Value to clip the gradient to.
+    tau: 10                                   # Temperature parameter in Munchausen target.
+    alpha: 0.99                               # Alpha parameter in Munchausen target.
+    with_munchausen: True                     # If true, target uses Munchausen penalty terms.
+    use_checkpoints: False                    # Save/load neural network weights.
+    checkpoint_dir: "/tmp/dqn_test"           # Directory to save/load the agent.
+    logdir: null                              # Logging dir to use for TF summary files. If None, the metrics will only be logged to stderr.
+    log_distribution: False                   # Enables logging of the distribution. - 

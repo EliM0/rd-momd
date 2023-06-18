@@ -18,8 +18,8 @@ dependencies:
       - cycler
       - kiwisolver
       - jax[cpu]
-      - open_spiel
       - rlax
       - dm-haiku
       - optax
       - clu
+      - matplotlib

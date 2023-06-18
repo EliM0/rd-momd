@@ -27,14 +27,15 @@ import optax
 import rlax
 
 from open_spiel.python import rl_agent
-from open_spiel.python import rl_agent_policy
 from open_spiel.python.mfg.algorithms import distribution as distribution_std
 from open_spiel.python.utils.replay_buffer import ReplayBuffer
+
+from rl import rl_obs_agent_policy
 
 Transition = collections.namedtuple(
     "Transition",
     "info_state action legal_one_hots reward next_info_state is_final_step "
-    "next_legal_one_hots")
+    "next_legal_one_hots distribution next_distribution")
 
 # Penalty for illegal actions in action selection. In epsilon-greedy, this will
 # prevent them from being selected and in soft-max the probabilities will be
@@ -49,7 +50,7 @@ def _copy_params(params):
   return jax.tree_map(lambda x: x.copy(), params)
 
 
-class RNNMunchausenDQN(rl_agent.AbstractAgent):
+class ObsRNNMunchausenDQN(rl_agent.AbstractAgent):
   """Munchausen DQN Agent implementation in JAX."""
 
   def __init__(
@@ -84,7 +85,8 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
       reset_replay_buffer_on_update: bool = True,
       gradient_clipping: Optional[float] = None,
       with_munchausen: bool = True,
-      seed: int = 42):
+      seed: int = 42,
+      partial_obs = False):
     """Initialize the Munchausen DQN agent."""
     self.player_id = int(player_id)
     self._num_actions = num_actions
@@ -100,6 +102,7 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
 
     self._tau = tau
     self._alpha = alpha
+    self.partial_obs = partial_obs
 
     # If true, the target uses Munchausen penalty terms.
     self._with_munchausen = with_munchausen
@@ -130,6 +133,7 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
       hidden_layers_sizes = [hidden_layers_sizes]
 
     # Change 1: modify the network to LSTM deep rnn network (try one layer first)
+    # new modification: consider deep rnn model, the new time sequence length 
     def network(x):
       core = hk.LSTM(hidden_layers_sizes[0])
       # print("x shape: ", x.shape)
@@ -177,7 +181,8 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
     else:
       rng = jax.random.PRNGKey(seed)
       # Change here: 
-      x = jnp.ones([128, state_representation_size])
+      # new modification: consider the time sequence length 
+      x = jnp.ones([1, state_representation_size])
       # print("x: ", x.shape)
       # init -> initialize the variables
       self._params_q_network = self.hk_network.init(rng, x)
@@ -244,14 +249,16 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
       # Act according to epsilon-greedy or soft-max for current Q-network.
       info_state = time_step.observations["info_state"][self.player_id]
       legal_actions = time_step.observations["legal_actions"][self.player_id]
+      distribution = time_step.observations["distribution"][self.player_id]
+      state = info_state + distribution
       # info_state is a list of size 67
       # print("info state step: ", len(info_state))
       if use_softmax:
-        action, probs = self._softmax(info_state, legal_actions,
+        action, probs = self._softmax(state, legal_actions,
                                       self._tau if tau is None else tau)
       else:
         epsilon = self._get_epsilon(is_evaluation)
-        action, probs = self._epsilon_greedy(info_state, legal_actions, epsilon)
+        action, probs = self._epsilon_greedy(state, legal_actions, epsilon)
     else:
       action = None
       probs = []
@@ -269,6 +276,8 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
 
       if self._prev_time_step and add_transition_record:
         # We may omit record adding here if it's done elsewhere.
+
+        # Change ver.3: change for trajectory 
         self.add_transition(self._prev_time_step, self._prev_action,
                             self._prev_legal_action, time_step)
 
@@ -282,6 +291,8 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
         self._prev_legal_action = legal_actions
 
     return rl_agent.StepOutput(action=action, probs=probs)
+
+# Change ver.3: modify buffer, adding trajectory 
 
   def add_transition(self, prev_time_step, prev_action, prev_legal_actions,
                      time_step):
@@ -311,36 +322,41 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
         reward=time_step.rewards[self.player_id],
         next_info_state=time_step.observations["info_state"][self.player_id][:],
         is_final_step=float(time_step.last()),
-        next_legal_one_hots=next_legal_one_hots)
+        next_legal_one_hots=next_legal_one_hots,
+        distribution=prev_time_step.observations["distribution"][self.player_id][:],
+        next_distribution=time_step.observations["distribution"][self.player_id][:])
     self._replay_buffer.add(transition)
 
-  def _get_action_probs(self, params, info_states, legal_one_hots):
+  def _get_action_probs(self, params, states, legal_one_hots):
     """Returns the soft-max action probability distribution."""
     # forward inference 
     # Change 2: output of LSTM is different, None argument is removed by without_apply_rng
     # q_values, _ = self.hk_network.apply(params, info_states)
     # info states shape: (128, 67) - > (batch size, state_size)
-    q_values = self.hk_network.apply(params, info_states)[0]
+    q_values = self.hk_network.apply(params, states)[0]
     # print("q_values get action probs: ", q_values)
     legal_q_values = q_values + (1 - legal_one_hots) * ILLEGAL_ACTION_PENALTY
     return jax.nn.softmax(legal_q_values / self._tau)
 
   def _loss(self, params, params_target, params_prev, info_states, actions,
             legal_one_hots, rewards, next_info_states, are_final_steps,
-            next_legal_one_hots):
+            next_legal_one_hots, distributions, next_distributions):
     """Returns the Munchausen loss."""
     # Target with 2 parts: reward and value for next state; each part is
     # modified according to the Munchausen trick.
     # Change 3: output of LSTM is different, None argument is removed by without_apply_rng
     # q_values, _ = self.hk_network.apply(params, info_states)
-    q_values = self.hk_network.apply(params, info_states)[0]
+    states = jax.numpy.hstack((info_states, distributions))
+    next_states = jax.numpy.hstack((next_info_states, next_distributions))
+
+    q_values = self.hk_network.apply(params, states)[0]
     # Change 4: output of LSTM is different, None argument is removed by without_apply_rng
     # target_q_values, _ = self.hk_network.apply(params_target, next_info_states)
-    target_q_values = self.hk_network.apply(params_target, next_info_states)[0]
+    target_q_values = self.hk_network.apply(params_target, next_states)[0]
 
     r_term = rewards
     if self._with_munchausen:
-      probs = self._get_action_probs(params_prev, info_states, legal_one_hots)
+      probs = self._get_action_probs(params_prev, states, legal_one_hots)
       prob_prev_action = jnp.sum(probs * actions, axis=-1)
       penalty_pi = jnp.log(jnp.clip(prob_prev_action, MIN_ACTION_PROB))
       r_term += self._alpha * self._tau * penalty_pi
@@ -348,7 +364,7 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
     if self._with_munchausen:
       # Average value over actions + extra log term.
       # We clip the probabilities to avoid NaNs in the log term.
-      next_probs = self._get_action_probs(params_prev, next_info_states,
+      next_probs = self._get_action_probs(params_prev, next_states,
                                           next_legal_one_hots)
       q_term_values = next_probs * (
           target_q_values -
@@ -375,13 +391,15 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
 
     def update(params, params_target, params_prev, opt_state, info_states,
                actions, legal_one_hots, rewards, next_info_states,
-               are_final_steps, next_legal_one_hots):
+               are_final_steps, next_legal_one_hots, distributions, next_distributions):
       loss_val, grad_val = self._loss_and_grad(params, params_target,
                                                params_prev, info_states,
                                                actions, legal_one_hots, rewards,
                                                next_info_states,
                                                are_final_steps,
-                                               next_legal_one_hots)
+                                               next_legal_one_hots, 
+                                               distributions, 
+                                               next_distributions)
       new_params, new_opt_state = self._opt_update_fn(params, opt_state,
                                                       grad_val)
       return new_params, new_opt_state, loss_val
@@ -417,12 +435,14 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
     are_final_steps = np.asarray([t.is_final_step for t in transitions])
     next_legal_one_hots = np.asarray(
         [t.next_legal_one_hots for t in transitions])
+    distributions = np.asarray([t.distribution for t in transitions])
+    next_distributions = np.asarray([t.next_distribution for t in transitions])
 
     self._params_q_network, self._opt_state, loss_val = self._jit_update(
         self._params_q_network, self._params_target_q_network,
         self._params_prev_q_network, self._opt_state, info_states, actions,
         legal_one_hots, rewards, next_info_states, are_final_steps,
-        next_legal_one_hots)
+        next_legal_one_hots, distributions, next_distributions)
 
     return loss_val
 
@@ -503,10 +523,10 @@ class RNNMunchausenDQN(rl_agent.AbstractAgent):
     return self._last_loss_value
 
 
-class SoftMaxRNNMunchausenDQN(rl_agent.AbstractAgent):
+class SoftMaxObsRNNMunchausenDQN(rl_agent.AbstractAgent):
   """Wraps a Munchausen DQN agent to use soft-max action selection."""
 
-  def __init__(self, agent: RNNMunchausenDQN, tau: Optional[float] = None):
+  def __init__(self, agent: ObsRNNMunchausenDQN, tau: Optional[float] = None):
     self._agent = agent
     self._tau = tau
 
@@ -515,7 +535,7 @@ class SoftMaxRNNMunchausenDQN(rl_agent.AbstractAgent):
         time_step, is_evaluation=is_evaluation, use_softmax=True, tau=self._tau)
 
 
-class RNNDeepOnlineMirrorDescent(object):
+class ObsRNNDeepOnlineMirrorDescent(object):
   """The deep online mirror descent algorithm."""
 
   def __init__(self,
@@ -539,9 +559,9 @@ class RNNDeepOnlineMirrorDescent(object):
         current iteration, episode and a dictionary of metrics to log.
     """
     assert len(envs) == len(agents)
-    # Make sure that the agents are all RNNMunchausenDQN.
+    # Make sure that the agents are all ObsRNNMunchausenDQN.
     for agent in agents:
-      assert isinstance(agent, RNNMunchausenDQN)
+      assert isinstance(agent, ObsRNNMunchausenDQN)
 
     self._game = game
 
@@ -592,19 +612,19 @@ class RNNDeepOnlineMirrorDescent(object):
 
   def get_softmax_policy(self,
                          tau: Optional[float] = None
-                        ) -> rl_agent_policy.JointRLAgentPolicy:
+                        ) -> rl_obs_agent_policy.ObsJointRLAgentPolicy:
     """Returns the softmax policy with the specified tau.
 
     Args:
       tau: Tau for soft-max action selection, or None to use the value set in
-        the RNNMunchausenDQN agents.
+        the ObsRNNMunchausenDQN agents.
 
     Returns:
       A JointRLAgentPolicy.
     """
-    return rl_agent_policy.JointRLAgentPolicy(
+    return rl_obs_agent_policy.ObsJointRLAgentPolicy(
         self._game, {
-            idx: SoftMaxRNNMunchausenDQN(agent, tau=tau)
+            idx: SoftMaxObsRNNMunchausenDQN(agent, tau=tau)
             for idx, agent in enumerate(self._agents)
         }, self._use_observation)
 

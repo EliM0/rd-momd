@@ -30,6 +30,8 @@ from open_spiel.python.mfg.algorithms import policy_value
 from open_spiel.python.mfg.games import factory
 from open_spiel.python.utils import app
 from open_spiel.python.utils import metrics
+from open_spiel.python.mfg.algorithms.rl import rl_obs_agent_policy
+from open_spiel.python.mfg.algorithms.rl import rl_obs_environment
 
 FLAGS = flags.FLAGS
 
@@ -91,6 +93,8 @@ flags.DEFINE_string(
     "be logged to stderr.")
 flags.DEFINE_bool("log_distribution", False,
                   "Enables logging of the distribution.")
+flags.DEFINE_bool("partial_obs", True,
+                  "Enables parrtial observability of the distribution.")
 
 
 def main(argv: Sequence[str]) -> None:
@@ -107,17 +111,19 @@ def main(argv: Sequence[str]) -> None:
   uniform_dist = distribution.DistributionPolicy(game, uniform_policy)
 
   envs = [
-      rl_environment.Environment(  # pylint: disable=g-complex-comprehension
+      rl_obs_environment.ObsEnvironment(  # pylint: disable=g-complex-comprehension
           game,
           mfg_distribution=uniform_dist,
           mfg_population=p,
-          observation_type=rl_environment.ObservationType.OBSERVATION)
+          observation_type=rl_environment.ObservationType.OBSERVATION,
+          partial_obs = True)
       for p in range(num_players)
   ]
 
   env = envs[0]
   info_state_size = env.observation_spec()["info_state"][0]
   num_actions = env.action_spec()["num_actions"]
+  distribution_size = env.observation_spec()["distribution"][0]
 
   # print("num actions: ", num_actions)
   # print("info state size: ", info_state_size)
@@ -143,10 +149,11 @@ def main(argv: Sequence[str]) -> None:
       "seed": FLAGS.seed,
       "tau": FLAGS.tau,
       "update_target_network_every": FLAGS.update_target_network_every,
-      "with_munchausen": FLAGS.with_munchausen
+      "with_munchausen": FLAGS.with_munchausen,
+      "partial_obs": True
   }
   agents = [
-      RNN_munchausen_deep_mirror_descent.RNNMunchausenDQN(p, info_state_size,
+      RNN_munchausen_deep_mirror_descent.RNNMunchausenDQN(p, info_state_size+distribution_size,
                                                    num_actions, **kwargs)
       for p in range(num_players)
   ]
