@@ -49,7 +49,7 @@ If the configuration file or the log directory are not specified, the code will 
 For example, to run an experiment on D-MOMD in the Four Rooms OpenSpiel MFGs environment with partial observability, execute:
 
 ```bash
-python src/evaluation.py --config=4rooms_config.yml --algorithm=po-dmomd
+python src/evaluation.py --config=configs/4rooms_config.yml --algorithm=po-dmomd
 ```
 
 To check the results generated, simply execute:
