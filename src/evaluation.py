@@ -18,41 +18,41 @@ def main(argv: Sequence[str]):
 
     # Algorithms without population dependency
     if FLAGS.algorithm == 'dafp':
-        logdir = 'runs/D-AFP' if not FLAGS.logdir else FLAGS.logdir
+        logdir = 'runs/Basics/D-AFP' if not FLAGS.logdir else FLAGS.logdir
         alg = AverageFictitiousPlay(game_name, game_settings, cfg, logdir=logdir)
     elif FLAGS.algorithm == 'dmomd':
-        logdir = 'runs/D-MOMD' if not FLAGS.logdir else FLAGS.logdir
+        logdir = 'runs/Basics/D-MOMD' if not FLAGS.logdir else FLAGS.logdir
         alg = MunchausenDeepMirrorDescent(game_name, game_settings, cfg, logdir=logdir)
     elif FLAGS.algorithm == 'rnn-momd':
-        logdir = 'runs/RD-MOMD' if not FLAGS.logdir else FLAGS.logdir
+        logdir = 'runs/Basics/RNN-MOMD' if not FLAGS.logdir else FLAGS.logdir
         alg = RNNMunchausenDeepMirrorDescent(game_name, game_settings, cfg, logdir=logdir)
 
     # Algorithms with full observability
     elif FLAGS.algorithm == 'fo-dafp':
-        logdir = 'runs/FO-DAFPP' if not FLAGS.logdir else FLAGS.logdir
+        logdir = 'runs/Full observability/D-AFPP' if not FLAGS.logdir else FLAGS.logdir
         alg = ObsAverageFictitiousPlay(game_name, game_settings, cfg, logdir=logdir)
     elif FLAGS.algorithm == 'fo-dmomd':
-        logdir = 'runs/FO-DMOMDP' if not FLAGS.logdir else FLAGS.logdir
+        logdir = 'runs/Full observability/D-MOMDP' if not FLAGS.logdir else FLAGS.logdir
         alg = ObsMunchausenDeepMirrorDescent(game_name, game_settings, cfg, logdir=logdir)
     elif FLAGS.algorithm == 'fo-1rd-momd':
-        logdir = 'runs/FO-1RDMOMD' if not FLAGS.logdir else FLAGS.logdir
+        logdir = 'runs/Full observability/1RD-MOMD' if not FLAGS.logdir else FLAGS.logdir
         alg = ObsRNNMunchausenDeepMirrorDescent(game_name, game_settings, cfg, logdir=logdir)
     elif FLAGS.algorithm == 'fo-trd-momd':
-        logdir = 'runs/FO-TRDMOMD' if not FLAGS.logdir else FLAGS.logdir
+        logdir = 'runs/Full observability/TRD-MOMD' if not FLAGS.logdir else FLAGS.logdir
         alg = ObsTRNNMunchausenDeepMirrorDescent(game_name, game_settings, cfg, logdir=logdir)
 
     # Algorithms with partial observability
     elif FLAGS.algorithm == 'po-dafp':
-        logdir = 'runs/PO-DAFPP' if not FLAGS.logdir else FLAGS.logdir
+        logdir = 'runs/Partial observability/D-AFPP' if not FLAGS.logdir else FLAGS.logdir
         alg = ObsAverageFictitiousPlay(game_name, game_settings, cfg, observability=True, logdir=logdir)
     elif FLAGS.algorithm == 'po-dmomd':
-        logdir = 'runs/PO-DMOMDP' if not FLAGS.logdir else FLAGS.logdir
+        logdir = 'runs/Partial observability/D-MOMDP' if not FLAGS.logdir else FLAGS.logdir
         alg = ObsMunchausenDeepMirrorDescent(game_name, game_settings, cfg, observability=True, logdir=logdir)
     elif FLAGS.algorithm == 'po-1rd-momd':
-        logdir = 'runs/PO-1RDMOMD' if not FLAGS.logdir else FLAGS.logdir
+        logdir = 'runs/Partial observability/1RD-MOMD' if not FLAGS.logdir else FLAGS.logdir
         alg = ObsRNNMunchausenDeepMirrorDescent(game_name, game_settings, cfg, logdir=logdir)
     elif FLAGS.algorithm == 'po-trd-momd':
-        logdir = 'runs/PO-TRDMOMD' if not FLAGS.logdir else FLAGS.logdir
+        logdir = 'runs/Partial observability/TRD-MOMD' if not FLAGS.logdir else FLAGS.logdir
         alg = ObsTRNNMunchausenDeepMirrorDescent(game_name, game_settings, cfg, observability=True, logdir=logdir)
     else:
         print("usage: evaluation.py --config=<config_dir> --algorithm=['afp', 'dmomd', 'rnn-momd', 'fo-dmomd', 'po-dmomd', 'po-rnn-momd']")
