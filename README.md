@@ -36,7 +36,7 @@ In this repository, we have population-dependent versions of D-MOMD and D-AFP. T
 
 \* In 1rd-momd, the algorithm samples trajectories of length 1. In trd-momd, the algorithm samples trajectories of length $T$ were $T$ is the horizon.
 
-## Running experiments
+## Running different experiments
 
 To run different algorithms, execute inside the root folder of the repo the following command:
 
