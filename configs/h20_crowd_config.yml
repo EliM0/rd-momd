@@ -101,10 +101,10 @@ trnn_momd:
     learn_every: 64                           # Number of steps between learning updates.
     num_episodes_per_iteration: 1000          # Number of training eepisodes for each iteration.
     num_iterations: 100                       # Number of iterations.
-    epsilon_decay_duration: 100000            # Number of game steps over which epsilon is decayed.
+    epsilon_decay_duration: 500000            # Number of game steps over which epsilon is decayed.
     epsilon_power: 1                          # Power for the epsilon decay.
-    epsilon_start: 0.1                        # Starting exploration parameter.
-    epsilon_end: 0.1                          # "Final exploration parameter.
+    epsilon_start: 0.3                        # Starting exploration parameter.
+    epsilon_end: 0.3                          # "Final exploration parameter.
     discount_factor: 1.0                      # Discount factor for future rewards.
     reset_replay_buffer_on_update: False      # Reset the replay buffer when the softmax policy is updated.
     seed: 42                                  # Training seed.
