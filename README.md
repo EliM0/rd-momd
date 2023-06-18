@@ -23,7 +23,7 @@ required to install and patch OpenSpiel.
 
 ## Algorithms
 
-In this repository, we have population-dependent versions of D-MOMD and D-AFP. This algorithms, can be run with full observability of the population or knowledge of the population of the agent's neighbour (partial observability). We also developed a population-dependent algorithm that takes into account the previous history of the agent to solve MFGs.
+In this repository, we have population-dependent versions of D-MOMD and D-AFP. These algorithms, can be run with full observability of the population or knowledge of the population of the agent's neighbour (partial observability). We also developed a population-dependent algorithm that takes into account the previous history of the agent to solve MFGs.
 
 
 |           |                 Algorithm                  | basic id |    fully observable id     |  partially observable id   |
